@@ -1,0 +1,62 @@
+# ---------- 截图与无头浏览器缓存 ----------
+# tools/probe_*.js 每次运行都会生成 profile 目录（.profile、.profile-b2、.profile-net-xxxx…）
+# 单个数十 MB、内含成千上万个小文件，绝不能进版本库；这里用 shots/* 一次盖住所有变体。
+shots/*
+!shots/.gitkeep
+
+# ---------- 依赖与临时缓存 ----------
+node_modules/
+tools/.cache/
+export_review/
+# 跑 build_corpus.py / enhance_corpus.py 时 Python 生成的字节码缓存
+__pycache__/
+
+# ---------- 运行期产物（不是源码） ----------
+# 对局存档 / 玩家反馈 / 启动记录：都写在服务器运行环境的磁盘上，发布重建即清空。
+# 它们是运行状态，不进版本库；要留存请在审阅页「导出 JSON」。
+data/records.jsonl
+data/records.1.jsonl
+data/feedback.jsonl
+data/boot.log
+# 房间快照（发布保护用）：进程退出前把在场的房间写到这里，新进程读回来。
+# 它是运行状态，绝不能进版本库 —— 万一随包上线，新容器会尝试「恢复」一批几小时前的旧房间。
+data/rooms.snap.json
+data/rooms.snap.json.tmp
+data/rooms.snap.json.bak
+# 公告栏内容：宁可不上线也不能进版本库 —— 随包上线的话，每次发布会把一条早就过时的
+# 公告「复活」到大厅顶上，比什么都没有更糟。
+data/notice.json
+data/notice.json.tmp
+# 自定义昵称的 24 小时冷却记账（uid → 上次改名时间）。
+# 同样是运行期状态：随包上线会让本机测试用的那几个 uid 在线上也被锁一天。
+data/nicklimit.json
+data/nicklimit.json.tmp
+*.log
+
+# ---------- 工具目录 ----------
+# WorkBuddy 的会话与记忆数据（.workbuddy/memory 里有项目决策记录，
+# 但那属于工具私有格式；对外共享的规范见 AGENTS.md）。
+.workbuddy/
+
+# ---------- 系统与编辑器垃圾 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+
+# ---------- 敏感口令与环境私有文件 ----------
+admin.key
+.wbapp_*.genie
+
+# ---------- 注意：下面这些是必须进库的，别手滑忽略 ----------
+# data/clauses.txt.gz   35 MB 语料（缺了服务起不来）
+# data/poems.json.gz    出处索引
+# data/chars.js         棋盘字池（tools/export_chars.py 生成）
+# data/t2s.json         繁简映射
+
+# 导出的存档（含玩家昵称，不进版本库）
+exports/
+
+# 探针/截图时的浏览器 profile 临时目录
+scratch/

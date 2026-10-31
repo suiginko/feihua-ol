@@ -1,0 +1,22 @@
+{
+  "name": "feihua-ol",
+  "version": "1.0.0",
+  "private": true,
+  "description": "飞花斯普拉遁 · 在线对战（两人开房，服务端判诗，无主持人）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --max-old-space-size=640 --expose-gc server.js",
+    "dev:alt": "node -e \"process.env.PORT=8799;require('./server.js')\"",
+    "test": "node tools/test_judge.js",
+    "test:all": "node tools/run_all.js",
+    "test:link": "node tools/test_share_link.js",
+    "test:room": "node tools/test_room_ops.js",
+    "test:members": "node tools/test_members.js",
+    "test:referee": "node tools/test_referee.js",
+    "e2e": "node tools/test_e2e.js",
+    "shots": "node tools/ui_probe.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

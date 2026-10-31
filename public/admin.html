@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>飞花斯普拉遁 · 审阅</title>
+<style>
+  :root{
+    --bg:#F5F3EE; --card:#FFFFFF; --text:#22201C; --muted:#6E6A63; --line:#E2DED6;
+    --a:#C2352A; --b:#1F79C4; --c:#DE9B00; --d:#18864B;
+    --ref:#7B4A12; --ok:#2F7A4B;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.6 -apple-system,"Segoe UI","Noto Sans SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:24px 18px 60px}
+  h1{font-size:19px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:12.5px;margin-bottom:18px}
+  .tabs{display:flex;gap:8px;margin-bottom:14px}
+  .tab{padding:6px 14px;border:1px solid var(--line);background:#fff;border-radius:999px;cursor:pointer;font-size:13px}
+  .tab.on{background:var(--text);color:#fff;border-color:var(--text)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:500;font-size:12px;white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  .mono{font-variant-numeric:tabular-nums;letter-spacing:.04em}
+  .na{color:var(--muted)}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 10px;
+    font-size:12.5px;cursor:pointer;white-space:nowrap}
+  .btn:hover{border-color:#c9c3b8}
+  .btn.p{background:var(--text);color:#fff;border-color:var(--text)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .sp{flex:1}
+  .empty{color:var(--muted);padding:26px 6px;text-align:center}
+  .who{font-weight:600}
+  .a{color:var(--a)} .b{color:var(--b)}
+  /* 席位标记：墨色小圆点 + 营地名 + 昵称。
+     颜色只给圆点，文字一律用正文色 —— 金营的 #DE9B00 当文字色对比度只有约 2.4:1，
+     过不了 WCAG AA（正文 4.5:1），当色块就没这个问题。 */
+  .si{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;vertical-align:middle}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
+  .sn{color:var(--muted);font-size:12px}
+  .sep{color:var(--muted);margin:0 3px}
+  .pill .dot{width:6px;height:6px;margin-right:3px}
+  .kv{display:grid;grid-template-columns:88px 1fr;gap:4px 12px;font-size:13px;margin-bottom:10px}
+  .kv b{color:var(--muted);font-weight:500}
+  .logline{padding:6px 0;border-bottom:1px dashed var(--line)}
+  .logline:last-child{border-bottom:0}
+  .meta{color:var(--muted);font-size:12px}
+  .ev{font-size:12.5px;color:#4a463f}
+  .ev time{color:var(--muted);margin-right:6px;font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11.5px;
+    background:#F1EEE8;color:var(--muted);margin-right:4px}
+  #detail{margin-top:14px}
+  textarea{width:100%}
+  .fb{border-bottom:1px solid var(--line);padding:10px 0}
+  .fb:last-child{border-bottom:0}
+  .fb .body{white-space:pre-wrap;word-break:break-word}
+  .warn{background:#FFF8E8;border:1px solid #F0E0B8;color:#6b5720;border-radius:8px;
+    padding:8px 10px;font-size:12.5px;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>飞花斯普拉遁 · 审阅</h1>
+  <div class="sub" id="sub">读取中…</div>
+
+  <div class="tabs">
+    <button class="tab on" data-tab="rec">已结束的对局</button>
+    <button class="tab" data-tab="fb">玩家反馈</button>
+    <button class="tab" data-tab="boot">启动记录</button>
+    <button class="tab" data-tab="snap">房间快照</button>
+    <button class="tab" data-tab="nt">公告</button>
+    <span class="sp"></span>
+  </div>
+
+  <div class="warn">存档写在服务器运行环境的磁盘上：<b>发布新版本重建环境后会清空</b>，需要长期留存请先点「导出 JSON」。</div>
+
+  <div class="card" id="paneRec">
+    <div class="row" style="margin-bottom:10px">
+      <div class="sp"></div>
+      <button class="btn" id="btnReload">刷新</button>
+      <button class="btn" id="btnExport">导出 JSON</button>
+    </div>
+    <div id="recList"><div class="empty">读取中…</div></div>
+    <div id="detail"></div>
+  </div>
+
+  <div class="card hidden" id="paneFb" style="display:none">
+    <div class="row" style="margin-bottom:10px">
+      <div class="sp"></div>
+      <button class="btn" id="btnReloadFb">刷新</button>
+    </div>
+    <div id="fbList"><div class="empty">读取中…</div></div>
+  </div>
+
+  <div class="card hidden" id="paneBoot" style="display:none">
+    <div class="row" style="margin-bottom:10px">
+      <div class="sp"></div>
+      <button class="btn" id="btnReloadBoot">刷新</button>
+    </div>
+    <div id="bootVerdict" style="margin-bottom:12px"></div>
+    <div id="bootList"><div class="empty">读取中…</div></div>
+  </div>
+
+  <div class="card hidden" id="paneSnap" style="display:none">
+    <div class="row" style="margin-bottom:10px">
+      <div class="sp"></div>
+      <button class="btn" id="btnReloadSnap">刷新</button>
+    </div>
+    <div class="sub" style="margin-bottom:10px">
+      发布新版本会重启容器。进程退出前会把在场的房间写一份快照到磁盘，新进程启动时读回来，
+      对局就不用从头再开。重启期间本步超时的，会变成「暂停」并重置计时，不会判负。
+    </div>
+    <div id="snapVerdict" style="margin-bottom:12px"></div>
+    <div id="snapList"><div class="empty">读取中…</div></div>
+  </div>
+
+  <!-- 公告：改完立即生效，不需要重新发布应用 -->
+  <div class="card hidden" id="paneNt" style="display:none">
+    <div class="sub" style="margin-bottom:10px">
+      大厅正文上方那一条。<b>保存后立即对所有人生效，不需要重新发布</b>（前端 30 秒内刷到）。
+      留空保存 = 撤下公告。公告存在容器磁盘上，<b>重建沙箱（发布）会连同一起清掉</b>。
+    </div>
+    <textarea id="ntText" maxlength="300" rows="4" spellcheck="false"
+      placeholder="例如：今晚 23:00 左右会更新一版，正在打的对局可能会中断。"
+      style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #DCE3EE;
+             border-radius:10px;font:inherit;line-height:1.6;resize:vertical;color:#1F2937"></textarea>
+    <div class="row" style="margin-top:10px">
+      <label class="sub" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="ntWarn"> 用警示样式（橙）
+      </label>
+      <span class="sub" id="ntCount">0 / 300</span>
+      <div class="sp"></div>
+      <span class="sub" id="ntState"></span>
+      <button class="btn" id="btnNtSave">保存</button>
+      <button class="btn" id="btnNtClear">撤下</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var KEY = new URLSearchParams(location.search).get('key') || '';
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  };
+  var ts = function (t) {
+    if (!t) return '—';
+    var d = new Date(t);
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+      ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  };
+  var hms = function (t) {
+    var d = new Date(t);
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  };
+  var dur = function (a, b) {
+    if (!a || !b) return '—';
+    var m = Math.round((b - a) / 60000);
+    return m >= 60 ? (Math.floor(m / 60) + ' 小时 ' + (m % 60) + ' 分') : (m + ' 分钟');
+  };
+  var kindsOf = function (cfg) {
+    var K = ['诗', '词', '曲', '赋', '文'];
+    var on = K.filter(function (k) { return cfg && cfg.kinds && cfg.kinds[k]; });
+    return on.join('') || '诗';
+  };
+
+  /* ---------- 席位（四个营地）----------
+     存档里的 players / score / log[].team 都是按席位 A–D 落的（2026-10-22 起 players 也存全了）。
+     这一页唯一必须做对的事：**A–D 各自认回自己的营地名**。
+     老版本写的是 `team === 'A' ? '赤' : '青'`，于是金营翠营的每一手都被记成青营。 */
+  var SEATS = ['A', 'B', 'C', 'D'];
+  var SEAT_NAME = { A: '赤', B: '青', C: '金', D: '翠' };
+  var SEAT_HALL = { A: '赤营', B: '青营', C: '金营', D: '翠营' };
+  var SEAT_VAR = { A: 'var(--a)', B: 'var(--b)', C: 'var(--c)', D: 'var(--d)' };
+
+  /* 昵称有三种形状：records 里是 {nick,mid}，snapshot 里是纯字符串，缺失是 null。
+     一个入口全接住，别在每个调用点各写一遍。 */
+  function nickOf(p) {
+    if (!p) return '空位';
+    if (typeof p === 'string') return p || '空位';
+    return p.nick || '空位';
+  }
+
+  /* 这一局用了几个营地：优先 cfg.playerCount；老存档没有这个字段，
+     就按「有名字的席位」往上推，至少 2（那时候只有双人局）。 */
+  function seatsOf(cfg, players) {
+    var n = Math.round(Number(cfg && cfg.playerCount) || 0);
+    if (!(n >= 1 && n <= 4)) {
+      n = 2;
+      for (var i = 0; i < SEATS.length; i++) {
+        if (players && players[SEATS[i]]) n = Math.max(n, i + 1);
+      }
+    }
+    return SEATS.slice(0, Math.max(1, Math.min(4, n)));
+  }
+
+  /* 计数字段一律走它：老存档 / 尾部写歪的记录少字段时，不要在页面上漏出 undefined。 */
+  function num(v) { var n = Number(v); return Number.isFinite(n) ? n : 0; }
+
+  function inkDot(seat) {
+    var v = SEAT_VAR[seat];
+    return v ? '<i class="dot" style="background:' + v + '"></i>' : '';
+  }
+
+  /* 日志行用：只带营地名，不带昵称（90 行都写昵称太吵）。 */
+  function seatTag(team) {
+    var s = String(team || '').toUpperCase();
+    return '<span class="pill">' + inkDot(s) + (SEAT_NAME[s] || '未知') + '</span>';
+  }
+
+  /* 「双方」用：营地名 + 昵称。两营之间写 vs，三四营用「·」串起来。 */
+  function seatLine(cfg, players) {
+    var seats = seatsOf(cfg, players);
+    var sep = '<span class="sep">' + (seats.length === 2 ? 'vs' : '·') + '</span>';
+    return seats.map(function (s) {
+      return '<span class="si">' + inkDot(s) +
+        '<span class="sn">' + (SEAT_HALL[s] || '未知') + '</span>' +
+        '<span class="who">' + esc(nickOf(players && players[s])) + '</span></span>';
+    }).join(sep);
+  }
+
+  /* 比分。两营保持原来的「赤 47 : 50 青」读法，三四营改成逐营罗列。 */
+  function scoreLine(cfg, score, detail) {
+    var sc = score || {};
+    var seats = seatsOf(cfg, {});
+    if (seats.length === 2) {
+      var a = Number(sc.a) || 0, b = Number(sc.b) || 0;
+      return detail ? ('赤 ' + a + ' : ' + b + ' 青 · 未涂色 ' + (Number(sc.n) || 0))
+        : (a + ' : ' + b);
+    }
+    /* 列表那一列窄，只放数字（顺序就是上面「双方」的席位顺序），全称放 title 里；
+       详情页有整行宽度，才写全「赤 11 · 青 22 …」。 */
+    var body = seats.map(function (s) { return Number(sc[s.toLowerCase()]) || 0; }).join(' · ');
+    return detail ? (seats.map(function (s) {
+      return SEAT_NAME[s] + ' ' + (Number(sc[s.toLowerCase()]) || 0);
+    }).join(' · ') + ' · 未涂色 ' + (Number(sc.n) || 0)) : body;
+  }
+
+  /* 列表里那列只放数字，全称放 title，鼠标停留能看到「赤营 11 · 青营 22 …」 */
+  function scoreTitle(cfg, score) {
+    var sc = score || {};
+    return seatsOf(cfg, {}).map(function (s) {
+      return SEAT_HALL[s] + ' ' + (Number(sc[s.toLowerCase()]) || 0);
+    }).join(' · ');
+  }
+
+  var CACHE = null;
+
+  async function loadRecords() {
+    $('recList').innerHTML = '<div class="empty">读取中…</div>';
+    try {
+      var r = await fetch('/api/records?key=' + encodeURIComponent(KEY));
+      var d = await r.json();
+      if (!d.ok) { $('recList').innerHTML = '<div class="empty">' + esc(d.reason || '读取失败') + '</div>'; return; }
+      CACHE = d;
+      $('sub').textContent = '共 ' + d.list.length + ' 局存档（最多显示最近 ' + d.max + ' 局）· 口令已通过';
+      if (!d.list.length) { $('recList').innerHTML = '<div class="empty">还没有打完的对局。</div>'; return; }
+      var rows = d.list.map(function (x) {
+        return '<tr>' +
+          '<td class="mono">' + x.id + '</td>' +
+          '<td class="mono" style="white-space:nowrap">' + ts(x.at) + '</td>' +
+          '<td>' + seatLine(x.cfg, x.players) + '</td>' +
+          '<td class="mono" title="' + esc(scoreTitle(x.cfg, x.score)) + '">' +
+            esc(scoreLine(x.cfg, x.score, false)) + '</td>' +
+          '<td class="mono">' + x.turns + ' 手</td>' +
+          '<td>' + esc(kindsOf(x.cfg)) + ' · ' + x.cfg.size + '×' + x.cfg.size +
+            (x.cfg.extra ? ' · 额外 ' + x.cfg.extra + ' 字' : '') + '</td>' +
+          '<td>' + esc(x.reason || '—') + '</td>' +
+          '<td><button class="btn" data-rid="' + esc(x.rid || x.id) + '">详情</button></td>' +
+          '</tr>';
+      }).join('');
+      $('recList').innerHTML = '<table><thead><tr><th>房号</th><th>结束时间</th><th>双方</th>' +
+        '<th>比分</th><th>手数</th><th>规则</th><th>结束原因</th><th></th></tr></thead><tbody>' +
+        rows + '</tbody></table>';
+    } catch (e) {
+      $('recList').innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>';
+    }
+  }
+
+  /* 用 rid（房号@结束时刻）定位：房号会复用，只给 id 的话点第二名起的「详情」都会打开同一局。 */
+  async function showDetail(rid) {
+    $('detail').innerHTML = '<div class="empty">读取中…</div>';
+    try {
+      var r = await fetch('/api/records?key=' + encodeURIComponent(KEY) + '&rid=' + encodeURIComponent(rid));
+      var d = await r.json();
+      if (!d.ok) { $('detail').innerHTML = '<div class="empty">' + esc(d.reason || '读取失败') + '</div>'; return; }
+      var x = d.record;
+      var head = '<div class="row" style="margin:6px 0 10px">' +
+        '<h1 style="font-size:16px">房号 ' + esc(x.id) + ' · ' + ts(x.at) + '</h1>' +
+        '<span class="sp"></span><button class="btn" id="btnClose">收起</button></div>' +
+        '<div class="kv">' +
+        '<b>双方</b><span>' + seatLine(x.cfg, x.players) + '</span>' +
+        '<b>比分</b><span class="mono">' + esc(scoreLine(x.cfg, x.score, true)) + '</span>' +
+        '<b>规则</b><span>' + esc(kindsOf(x.cfg)) + ' · ' + x.cfg.size + '×' + x.cfg.size +
+          ' · ' + (x.cfg.endless ? '战至最后一刻' : x.cfg.rounds + ' 轮') +
+          ' · 每手 ' + x.cfg.turnSeconds + ' 秒' +
+          (x.cfg.extra ? ' · 额外 ' + x.cfg.extra + ' 字' : '') +
+          (x.cfg.allowDup ? ' · 允许重复句' : '') + '</span>' +
+        '<b>结束</b><span>' + esc(x.reason || '—') + ' · 历时 ' + dur(x.createdAt, x.at) + '</span>' +
+        '</div>';
+
+      var log = (x.log || []).map(function (e) {
+        if (e.type === 'pass') {
+          return '<div class="logline">' + seatTag(e.team) +
+            '<span class="meta">第 ' + e.round + ' 轮 · 放弃</span></div>';
+        }
+        var src = e.source ? '　《' + esc(e.source.title) + '》' + esc(e.source.author) + ' · ' + esc(e.source.dynasty)
+          : (e.via === 'manual' ? (e.ruler && e.ruler.ref ? '　裁判 ' + esc(e.ruler.nick) + ' 裁定有效' : '　对手裁定有效') : '');
+        return '<div class="logline">' + seatTag(e.team) +
+          esc(e.line || e.norm) +
+          '<div class="meta">第 ' + e.round + ' 轮 · 命中 ' + num(e.hits) + ' · 新占 ' + num(e.blank) +
+          ' · 抢夺 ' + num(e.capture) + ' · 同色 ' + num(e.hold) + src + '</div></div>';
+      }).join('');
+
+      var ev = (x.events || []).map(function (e) {
+        return '<div class="ev"><time>' + hms(e.at) + '</time>' + esc(e.text) + '</div>';
+      }).join('');
+
+      $('detail').innerHTML = '<div class="card" style="margin-top:12px;background:#FBFAF7">' + head +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" class="detgrid">' +
+        '<div><div class="meta" style="margin-bottom:6px">飞花记录（' + (x.log || []).length + ' 条）</div>' +
+        (log || '<div class="empty">无</div>') + '</div>' +
+        '<div><div class="meta" style="margin-bottom:6px">事件流水（' + (x.events || []).length + ' 条）</div>' +
+        (ev || '<div class="empty">无</div>') + '</div>' +
+        '</div></div>';
+      $('btnClose').onclick = function () { $('detail').innerHTML = ''; };
+      $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) {
+      $('detail').innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>';
+    }
+  }
+
+  async function loadFeedback() {
+    $('fbList').innerHTML = '<div class="empty">读取中…</div>';
+    try {
+      var r = await fetch('/api/feedback?key=' + encodeURIComponent(KEY));
+      var d = await r.json();
+      if (!d.ok) { $('fbList').innerHTML = '<div class="empty">' + esc(d.reason || '读取失败') + '</div>'; return; }
+      if (!d.list.length) { $('fbList').innerHTML = '<div class="empty">还没有收到反馈。</div>'; return; }
+      $('fbList').innerHTML = d.list.map(function (f) {
+        return '<div class="fb"><div class="meta">' + ts(f.at) + ' · ' +
+          esc(f.nick || '匿名') + (f.roomId ? ' · 房间 ' + esc(f.roomId) : '') +
+          (f.contact ? ' · 联系 ' + esc(f.contact) : '') + '</div>' +
+          '<div class="body">' + esc(f.text) + '</div></div>';
+      }).join('');
+    } catch (e) {
+      $('fbList').innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>';
+    }
+  }
+
+  /* 启动记录：每次进程启动追加一行，用来判断「发布之后磁盘还在不在」。
+     判据只有两个：prevLines（启动时文件里已经有几条）与 host（容器 hostname）。 */
+  async function loadBoot() {
+    $('bootList').innerHTML = '<div class="empty">读取中…</div>';
+    $('bootVerdict').innerHTML = '';
+    try {
+      var r = await fetch('/api/boot?key=' + encodeURIComponent(KEY));
+      var d = await r.json();
+      if (!d.ok) {
+        $('bootList').innerHTML = '<div class="empty">' + esc(d.reason || '读取失败') + '</div>';
+        return;
+      }
+      var list = d.list || [];
+      if (!list.length) { $('bootList').innerHTML = '<div class="empty">还没有启动记录。</div>'; return; }
+
+      var cur = list[0];
+      var hosts = [];
+      list.forEach(function (x) { if (hosts.indexOf(x.host) < 0) hosts.push(x.host); });
+      var keep = cur.prevLines > 0;
+      $('bootVerdict').innerHTML = keep
+        ? '<div class="warn" style="background:#F1FAF3;border-color:#CBE7D3;color:#1E6B35">' +
+          '本次启动读到了上一次的 <b>' + cur.prevLines + '</b> 条记录 → <b>磁盘在重启后是延续的</b>，' +
+          '「把对局存盘、重启后恢复」这条路可行。</div>'
+        : '<div class="warn">本次启动时 boot.log 是空的 → <b>这一轮拿到的是干净磁盘</b>，' +
+          '只靠写盘保不住对局，要保住得把状态放到容器外面（云数据库）。' +
+          '「房间快照」标签里能看到这一轮到底有没有真的接回对局。</div>';
+
+      var rows = list.map(function (x, i) {
+        return '<tr>' +
+          '<td class="mono">' + ts(x.at) + '</td>' +
+          '<td class="mono">' + (x.prevLines > 0 ? '是（' + x.prevLines + ' 条）' : '否') + '</td>' +
+          '<td class="mono">' + esc(x.host || '—') + '</td>' +
+          '<td class="mono">' + esc(x.pid || '—') + '</td>' +
+          '<td class="mono">' + esc(x.port || '—') + '</td>' +
+          '<td class="mono">' + (x.bootMs != null ? x.bootMs + ' ms' : '—') +
+            (x.judgeMs != null ? '（语料 ' + x.judgeMs + ' ms）' : '') + '</td>' +
+          '<td>' + (i === 0 ? '本次' : '') + '</td>' +
+          '</tr>';
+      }).join('');
+      if (hosts.length > 1) {
+        $('bootVerdict').innerHTML += '<div class="sub" style="margin-bottom:12px">' +
+          '这些记录跨了 <b>' + hosts.length + '</b> 个 hostname（' + esc(hosts.join(' / ')) +
+          '）—— 容器换过，但磁盘内容' + (keep ? '仍然在，说明挂的是持久卷。' : '也一起没了。') + '</div>';
+      }
+      $('bootList').innerHTML = '<table><thead><tr><th>启动时间</th><th>上次记录还在吗</th>' +
+        '<th>hostname</th><th>PID</th><th>端口</th><th>启动耗时</th><th></th></tr></thead><tbody>' +
+        rows + '</tbody></table>';
+    } catch (e) {
+      $('bootList').innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>';
+    }
+  }
+
+  var PHASE = { waiting: '等待对手', playing: '对局中', finished: '已结束' };
+
+  /* 房间快照：发布保护机制的现场状态。
+     读法只有一条 ——「内存里」和「快照里」应该一直是同一个数；
+     上面那条横幅回答的是「这一次启动到底接回来了几间房」。 */
+  async function loadSnap() {
+    $('snapList').innerHTML = '<div class="empty">读取中…</div>';
+    $('snapVerdict').innerHTML = '';
+    try {
+      var r = await fetch('/api/snapshot?key=' + encodeURIComponent(KEY));
+      var d = await r.json();
+      if (!d.ok) {
+        $('snapList').innerHTML = '<div class="empty">' + esc(d.reason || '读取失败') + '</div>';
+        return;
+      }
+      var lr = d.lastRestore || {};
+      var lag = d.inSnapshot !== d.inMemory
+        ? '<span style="color:#8a6b20">（快照每 1.5 秒追一次，差这一下是正常的，刷新即可）</span>'
+        : '';
+      var head = '<div class="sub" style="margin-bottom:10px">' +
+        '内存里 <b>' + d.inMemory + '</b> 间 · 快照里 <b>' + d.inSnapshot + '</b> 间' + lag + ' · ' +
+        '最近落盘 ' + (d.lastWriteAt ? hms(d.lastWriteAt) + '（' + esc(d.lastWriteWhy || '—') + '）' : '还没写过') +
+        (d.writeErrors ? ' · <b style="color:#B02A1E">连续写失败 ' + d.writeErrors + ' 次</b>' : '') +
+        '</div>';
+
+      var banner = lr.rooms
+        ? '<div class="warn" style="background:#F1FAF3;border-color:#CBE7D3;color:#1E6B35">' +
+          '本次启动<b>接回了 ' + lr.rooms + ' 间房</b>（快照是 ' + Math.round((lr.age || 0) / 1000) +
+          ' 秒前的）—— 上一次发布没有打断进行中的对局。</div>'
+        : '<div class="warn">本次启动<b>没有接回房间</b>：' + esc(lr.why || '—') + '</div>';
+      $('snapVerdict').innerHTML = banner + head;
+
+      var list = d.rooms || [];
+      if (!list.length) {
+        $('snapList').innerHTML = '<div class="empty">' +
+          (d.exists ? '现在房间里没有人。' : '这个运行环境还没有写过快照文件。') + '</div>';
+        return;
+      }
+      var rows = list.map(function (x) {
+        var left = x.deadline ? Math.max(0, Math.round((x.deadline - d.now) / 1000)) + ' s' : '—';
+        return '<tr>' +
+          '<td class="mono">' + esc(x.id) + '</td>' +
+          '<td>' + esc(PHASE[x.phase] || x.phase) + '</td>' +
+          '<td class="mono">' + esc(x.round) + '</td>' +
+          /* 一行之内列出全部席位：以前固定「赤营 / 青营」两列，金营翠营永远显示成「—」 */
+          '<td>' + seatLine({ playerCount: x.playerCount }, x.players) + '</td>' +
+          '<td class="mono">' + esc(x.watchers) + '</td>' +
+          '<td class="mono">' + esc(x.paused ? '已暂停' : left) + '</td>' +
+          '<td>' + (x.restored ? '从快照恢复' : '') + '</td>' +
+          '</tr>';
+      }).join('');
+      $('snapList').innerHTML = '<table><thead><tr><th>房号</th><th>阶段</th><th>轮次</th>' +
+        '<th>成员（按营地）</th><th>观众</th><th>本步剩余</th><th></th></tr></thead><tbody>' +
+        rows + '</tbody></table>';
+    } catch (e) {
+      $('snapList').innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>';
+    }
+  }
+
+  /* ---------- 公告 ----------
+     这一页唯一「改完不用重新发布」的东西：写进 data/notice.json，大厅 30 秒内刷到。
+     所以正文只做纯文本，前端用 textContent 上屏，不当 HTML 解析。
+
+     ntTouched：一旦动过输入框，之后回来的 loadNotice 就不许再覆盖它。
+     否则「切到公告页 → 立刻开始打字 → 读取回包才到」会把刚打的字清空。 */
+  var ntTouched = false;
+
+  function updateNtCount() { $('ntCount').textContent = $('ntText').value.length + ' / 300'; }
+
+  async function loadNotice() {
+    $('ntState').textContent = '读取中…';
+    try {
+      var r = await fetch('/api/notice', { cache: 'no-store' });
+      var d = await r.json();
+      var n = d && d.notice;
+      if (!ntTouched) {
+        $('ntText').value = n ? n.text : '';
+        $('ntWarn').checked = !!(n && n.kind === 'warn');
+      }
+      $('ntState').textContent = n ? ('当前公告保存于 ' + ts(n.at)) : '当前没有公告';
+    } catch (_) {
+      $('ntState').textContent = '读取失败';
+    }
+    updateNtCount();
+  }
+
+  async function saveNotice(text) {
+    $('ntState').textContent = '保存中…';
+    try {
+      var r = await fetch('/api/notice?key=' + encodeURIComponent(KEY), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text, kind: $('ntWarn').checked ? 'warn' : 'info' }),
+      });
+      var d = await r.json();
+      if (!d.ok) { $('ntState').textContent = d.reason || '保存失败'; return; }
+      ntTouched = false;
+      $('ntState').textContent = d.notice ? ('已保存 · ' + ts(d.notice.at)) : '已撤下';
+    } catch (_) {
+      $('ntState').textContent = '网络失败';
+    }
+  }
+
+  $('ntText').addEventListener('input', function () {
+    ntTouched = true;
+    updateNtCount();
+  });
+  $('ntWarn').addEventListener('change', function () { ntTouched = true; });
+  $('btnNtSave').onclick = function () { saveNotice($('ntText').value); };
+  $('btnNtClear').onclick = function () {
+    $('ntText').value = '';
+    updateNtCount();
+    saveNotice('');
+  };
+
+  $('recList').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-rid]');
+    if (b) showDetail(b.getAttribute('data-rid'));
+  });
+  $('btnReload').onclick = loadRecords;
+  $('btnReloadFb').onclick = loadFeedback;
+  $('btnReloadBoot').onclick = loadBoot;
+  $('btnReloadSnap').onclick = loadSnap;
+  $('btnExport').onclick = function () {
+    if (!CACHE) return;
+    var blob = new Blob([JSON.stringify(CACHE, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '飞花-存档-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  };
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (t) {
+    t.onclick = function () {
+      Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (x) { x.classList.toggle('on', x === t); });
+      var which = t.getAttribute('data-tab');
+      $('paneRec').style.display = which === 'rec' ? '' : 'none';
+      $('paneFb').style.display = which === 'fb' ? '' : 'none';
+      $('paneBoot').style.display = which === 'boot' ? '' : 'none';
+      $('paneSnap').style.display = which === 'snap' ? '' : 'none';
+      $('paneNt').style.display = which === 'nt' ? '' : 'none';
+      if (which === 'fb') loadFeedback();
+      if (which === 'boot') loadBoot();
+      if (which === 'snap') loadSnap();
+      if (which === 'nt') loadNotice();
+    };
+  });
+
+  loadRecords();
+})();
+</script>
+</body>
+</html>

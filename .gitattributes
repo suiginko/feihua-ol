@@ -1,0 +1,12 @@
+# 行尾统一交给 git 识别（本机 core.autocrlf=true：库里存 LF，检出成 CRLF）
+* text=auto
+
+# 二进制：绝不能做行尾转换，否则语料压缩包会被改坏
+*.gz binary
+*.png binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# 运行期流水：只追加、不比较，别让 git 统计它们
+*.jsonl -text

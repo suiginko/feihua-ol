@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>飞花斯普拉遁 · 在线对战</title>
+<style>
+  /* ============================================================
+     视觉规范与《飞花斯普拉遁-主持台》保持一致：
+     同一套设计令牌、同一套棋盘规则（无缝网格 / --cell-fs / 格线透明）、
+     同一套按钮、卡片、飞花记录、结算面板样式。
+     只在「在线对战」特有的地方新增：大厅（建房/加入）、房号、倒计时、
+     判定回执（msg）、语料多选。
+     ============================================================ */
+  :root{
+    --ink-a:#C2352A;      /* 赤方墨色 */
+    --ink-b:#1F79C4;      /* 青方墨色（对墨黑 3.21:1、对白 4.57:1，两端约束的交点） */
+    --ink-c:#DE9B00;      /* 金方墨色：明艳璀璨金 */
+    --ink-d:#18864B;      /* 翠方墨色 */
+    --bg:#F4F6FA;
+    --card:#FFFFFF;
+    --text:#1F2937;
+    --muted:#5B6B84;
+    --line:#DCE3EE;
+    --blank:#EDF1F7;      /* 未涂色格底 */
+    --blank-text:#33415C;
+    --grid:#9FABBC;       /* 格线：装饰性分隔线，主动放弃 3:1 */
+    --danger:#98271D;
+    --hit-hold:#6B7688;
+    /* 出手前预览色：当前方墨色以 42% 半透明叠在底色上的结果（预先算成实色，
+       白色内框叠上去不会有二次透明加深）—— 与主持台同一套取值 */
+    --pv-a:#DBA2A1;       /* 赤方预览 · 叠在未填色格上 */
+    --pv-b:#96BADD;       /* 青方预览 · 叠在未填色格上 */
+    --pv-c:#F6D88E;       /* 金方预览 · 叠在未填色格上 */
+    --pv-d:#80C29F;       /* 翠方预览 · 叠在未填色格上 */
+    --pv-ab:#63577C;      /* 赤方预览 · 叠在青方格上（抢夺） */
+    --pv-ba:#7D4D66;      /* 青方预览 · 叠在赤方格上（抢夺） */
+    --pv-cap:#6B5770;     /* 多方抢夺通用叠加色 */
+    --radius:14px;
+    --shadow:0 1px 2px rgba(23,43,77,.06), 0 8px 24px rgba(23,43,77,.06);
+    /* 只在在线版用到：提示性小字、房号等 */
+    --faint:#7A8698;
+    --soft:#EAEFF7;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;width:100%;max-width:100%;overflow-x:hidden;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:"PingFang SC","Microsoft YaHei","Source Han Sans SC","Noto Sans SC",system-ui,sans-serif;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{width:100%;max-width:1240px;margin:0 auto;padding:20px 20px 56px;box-sizing:border-box;}
+  .hidden{display:none !important;}
+
+  /* ---------- header（同主持台：标题 + 单行工具条） ---------- */
+  header.top{
+    display:flex;align-items:flex-end;justify-content:space-between;
+    gap:12px;flex-wrap:nowrap;margin-bottom:16px;
+  }
+  h1{font-size:22px;margin:0;letter-spacing:.5px;white-space:nowrap;flex:0 0 auto;}
+  h1 .tag{
+    font-size:12px;font-weight:600;vertical-align:middle;margin-left:8px;
+    background:#E8EEF8;color:#2C4A78;border-radius:999px;padding:3px 9px;letter-spacing:0;
+  }
+  .head-tools{
+    display:flex;gap:8px;align-items:center;
+    flex-wrap:nowrap;justify-content:flex-end;min-width:0;
+  }
+  .head-tools>*{flex:0 0 auto;}
+  header.top button{padding:7px 12px;white-space:nowrap;}
+  @media (max-width:900px){ header.top{flex-wrap:wrap;} }
+
+  /* ---------- 通用控件（照搬主持台） ---------- */
+  button{
+    font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;
+    border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--text);
+    padding:8px 14px;transition:.15s;line-height:1.2;
+  }
+  button:hover:not(:disabled){border-color:#B9C6DA;background:#FAFBFE;}
+  /* 弱化的文字按钮：给「反馈」这种次要入口用，别跟主按钮抢视线 */
+  button.lite{padding:3px 9px;font-size:11.5px;font-weight:500;border-radius:999px;
+    border-color:var(--line);color:var(--muted);background:transparent;}
+  button.lite:hover:not(:disabled){color:var(--text);background:#fff;}
+  button:disabled{opacity:.45;cursor:not-allowed;}
+  button.primary{background:var(--ink-b);border-color:var(--ink-b);color:#fff;}
+  button.primary:hover:not(:disabled){background:#175E9E;}
+  /* 提交按钮跟随当前回合方墨色（与主持台同一套） */
+  #btnSubmit.team-a{background:var(--ink-a);border-color:var(--ink-a);color:#fff;}
+  #btnSubmit.team-a:hover:not(:disabled){background:#A72C22;}
+  #btnSubmit.team-b{background:var(--ink-b);border-color:var(--ink-b);color:#fff;}
+  #btnSubmit.team-b:hover:not(:disabled){background:#175E9E;}
+  #btnSubmit.team-c{background:var(--ink-c);border-color:var(--ink-c);color:#fff;}
+  #btnSubmit.team-c:hover:not(:disabled){background:#A36300;}
+  #btnSubmit.team-d{background:var(--ink-d);border-color:var(--ink-d);color:#fff;}
+  #btnSubmit.team-d:hover:not(:disabled){background:#136D3D;}
+
+  input[type=text],input[type=number]{
+    font-family:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);
+    border-radius:10px;background:#fff;color:var(--text);outline:none;
+    transition:border-color .15s,box-shadow .15s;min-width:0;
+  }
+  input[type=text]:focus,input[type=number]:focus{
+    border-color:var(--ink-b);box-shadow:0 0 0 3px rgba(30,111,184,.12);
+  }
+  input[type=number],#turnSeconds,#maxPoemLen{width:64px;text-align:center;font-variant-numeric:tabular-nums;}
+  .chk{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none;}
+  .chk input{accent-color:var(--ink-b);width:15px;height:15px;margin:0;}
+  .sizefield{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);}
+  .modelist{display:flex;gap:6px;flex-wrap:wrap;}
+  .modepill{
+    display:inline-flex;align-items:center;gap:5px;font-size:12.5px;padding:4px 10px;
+    border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer;
+    color:var(--muted);user-select:none;transition:.15s;
+  }
+  .modepill:hover{background:#F7F9FC;border-color:#C9D6E8;}
+  .modepill.checked,.modepill:has(input:checked){
+    border-color:var(--ink-b);color:var(--ink-b);background:#EDF4FB;font-weight:700;
+  }
+  .modepill input{margin:0;accent-color:var(--ink-b);}
+
+  /* ---------- 布局（同主持台：左棋盘 1fr / 右操作台 396） ---------- */
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 396px;gap:18px;align-items:start;}
+  @media (max-width:1080px){.layout{grid-template-columns:1fr;}}
+  .side{display:flex;flex-direction:column;gap:14px;min-width:0;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);min-width:0;max-width:100%;}
+  .card .pad{padding:14px 16px;}
+  .sec-title{
+    font-size:12px;font-weight:700;letter-spacing:1.2px;color:var(--muted);
+    text-transform:uppercase;margin:0 0 10px;
+  }
+
+  /* ---------- 大厅（在线版特有，沿用同一套卡片/输入/按钮） ----------
+     左：开一局（固定宽度，够放表单就行）；右：当前房间（占满剩余宽度，
+     列表不再自己滚动，房间多就把页面撑长 —— 滚动条交给整页，
+     免得「房间里明明在打，列表里却翻不到」。 */
+  .lobby{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:18px;align-items:start;min-width:0;}
+  @media (max-width:820px){.lobby{grid-template-columns:minmax(0,1fr);}}
+
+  /* ---------- 公告栏（大厅顶上一条 / 对局新发公告条） ----------
+     内容存在服务器上（data/notice.json），审阅页可改 —— 改一句话不该重新发布一次应用。
+     横跨两列；两种颜色只区分「一般知会」和「要注意」，正文都是 --text，
+     对比度分别 12.6:1 / 12.9:1，远超 AA。 */
+  .notice{
+    grid-column:1 / -1;display:flex;align-items:center;gap:14px;
+    padding:13px 36px;border-radius:var(--radius);
+    background:#EEF4FF;border:1px solid #C9DBF5;
+  }
+  .notice.warn{background:#FFF6E5;border-color:#F0D8A8;}
+  .notice .ntag{
+    flex:0 0 auto;font-size:12px;font-weight:600;line-height:20px;letter-spacing:.5px;
+    padding:1px 8px;border-radius:999px;background:#DCE7FA;color:#2C4A78;
+  }
+  .notice.warn .ntag{background:#FDEBC8;color:#8A4B00;}
+  /* 空态：没有公告时不收走这一条，只把它压暗成「暂无公告」。
+     收走会让下面两块（开一局 / 房间列表）在公告撤下的瞬间往上跳一格。 */
+  .notice.empty{background:#F7F8FA;border-color:#E3E6EC;}
+  .notice.empty .ntag{background:#ECEEF3;color:#6B7280;}
+  .notice.empty .ntext{color:var(--muted);}
+  .notice .ntext{margin:0;font-size:14px;line-height:1.6;color:var(--text);white-space:pre-line;word-break:break-word;}
+  /* 对局内新发公告条（带 × 关闭按钮） */
+  .game-notice{
+    margin-bottom:14px;position:relative;padding:11px 44px 11px 20px;grid-column:auto;
+  }
+  .notice-close{
+    position:absolute;right:12px;top:50%;transform:translateY(-50%);
+    background:transparent;border:0;font-size:20px;line-height:1;
+    color:var(--muted);cursor:pointer;padding:4px 8px;border-radius:6px;
+  }
+  .notice-close:hover{color:var(--text);background:rgba(0,0,0,.06);}
+  .formrow{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:9px 0;border-bottom:1px dashed var(--soft);
+  }
+  .formrow:last-of-type{border-bottom:0;}
+  .formrow>label{font-size:13px;color:var(--muted);}
+  .formrow .hint{font-size:12px;color:var(--faint);margin-left:6px;}
+  .formrow.stack{align-items:flex-start;}
+  .formrow.stack>label{padding-top:4px;}
+  /* 自定义字库：第一行按钮，第二行状态。
+     状态文字太长（「自定义 400 字（0 格由系统补）」），与按钮挤一行会把「撤下」顶下去。 */
+  .poolline{display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap;}
+  .poolline .poolstat{font-size:12px;color:var(--faint);flex:1 1 100%;order:3;
+    min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .poolline .poolstat b{color:var(--text);font-variant-numeric:tabular-nums;}
+  .poolmeta{font-size:12px;color:var(--muted);margin-top:8px;min-height:16px;line-height:1.5;}
+  .poolmeta b{color:var(--text);font-variant-numeric:tabular-nums;}
+  .poolmeta .bad{color:#B03A2E;}
+  /* 字库弹窗自带一套样式，不借用导出/导入进度那套（两边是独立功能） */
+  .pool-pick{display:flex;align-items:center;gap:10px;margin-top:12px;}
+  .pool-pick .pool-fname{font-size:12px;color:var(--faint);min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pool-box{width:100%;margin-top:10px;box-sizing:border-box;padding:10px 12px;
+    border:1px solid var(--line);border-radius:10px;font:inherit;font-size:13px;
+    line-height:1.6;resize:vertical;color:var(--text);background:#fff;}
+  .pool-box:focus{outline:none;border-color:#9DB6D8;box-shadow:0 0 0 3px rgba(120,160,210,.16);}
+  /* 开局前的「点格子换字」提示条 + 格子可点态 */
+  .pickhint{margin:0 14px 12px;padding:7px 10px;border-radius:8px;background:var(--soft);
+    border:1px solid var(--line);color:var(--muted);font-size:12.5px;text-align:center;}
+  .cell.pickable{cursor:pointer;}
+  .cell.pickable:hover{box-shadow:inset 0 0 0 2px #C9A227;z-index:2;}
+  /* 局内询问框：替掉浏览器 confirm —— 原生弹窗的标题是域名、按钮写「确定/取消」，
+     跟站内其它弹窗完全两个世界，移动端还要多一次「返回」。 */
+  #askOverlay .modal{max-width:430px;text-align:left;}
+  #askOverlay .askbody{font-size:13.5px;line-height:1.75;color:var(--muted);}
+  #askOverlay .askbody b{color:var(--text);font-weight:700;}
+  #askOverlay .askbody .askwait{color:#B06A00;font-weight:700;}
+  #askOverlay .askacts{display:flex;gap:10px;margin-top:18px;}
+  #askOverlay .askacts button{flex:1;}
+  #askOverlay .askacts button.primary{flex:1.35;}
+  /* 轮数 + 战至最后一刻：两者互斥（勾选后不再限轮数），所以放在同一组里 */
+  .roundsgroup{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
+  input:disabled{background:#F1F4F9;color:var(--faint);cursor:not-allowed;border-color:#E4EAF3;}
+  #turnSeconds:disabled,#maxPoemLen:disabled,#cfgSeconds:disabled,#cfgMaxLen:disabled{font-weight:700;text-align:center;}
+
+  /* ---------- 数字输入框步进器（支持手机端与桌面端优雅上调/下调） ---------- */
+  .numstep{
+    display:inline-flex;align-items:stretch;border:1px solid var(--line);
+    border-radius:10px;background:#fff;overflow:hidden;vertical-align:middle;
+    transition:border-color .15s,box-shadow .15s;box-sizing:border-box;
+  }
+  .numstep:focus-within{
+    border-color:var(--ink-b);box-shadow:0 0 0 3px rgba(30,111,184,.12);
+  }
+  .numstep input[type=number],
+  .numstep input[type=text]{
+    border:none;border-radius:0;background:transparent;outline:none;
+    box-shadow:none;text-align:center;font-variant-numeric:tabular-nums;
+    padding:6px 2px;margin:0;width:44px;font-family:inherit;font-size:13px;
+    -moz-appearance:textfield;
+  }
+  .numstep input::-webkit-outer-spin-button,
+  .numstep input::-webkit-inner-spin-button{
+    -webkit-appearance:none;margin:0;
+  }
+  .nstep-btn{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:28px;min-width:28px;padding:0;margin:0;border:none;outline:none;
+    background:#F5F7FA;color:var(--muted);font-size:16px;font-weight:700;
+    line-height:1;cursor:pointer;user-select:none;touch-action:manipulation;
+    transition:background .12s,color .12s;
+  }
+  .nstep-btn:hover:not(:disabled){
+    background:#E9EFF7;color:var(--text);
+  }
+  .nstep-btn:active:not(:disabled){
+    background:#DCE6F3;
+  }
+  .nstep-btn:disabled{
+    opacity:.35;cursor:not-allowed;background:#F5F7FA;color:var(--faint);
+  }
+  .numstep:has(input:disabled){
+    background:#F1F4F9;border-color:#E4EAF3;cursor:not-allowed;
+  }
+  .numstep:has(input:disabled) .nstep-btn{
+    background:#E9EEF5;cursor:not-allowed;opacity:.4;
+  }
+
+  /* 单人模式下不限时/不限字数的无限符号灰框：统一隐藏步进按钮并定宽居中，保持两者完全一致 */
+  .numstep:has(input:disabled[type=text]){
+    width:64px;min-width:64px;max-width:64px;justify-content:center;
+  }
+  .numstep:has(input:disabled[type=text]) .nstep-btn{
+    display:none;
+  }
+  .numstep:has(input:disabled[type=text]) input{
+    width:100%;font-weight:700;text-align:center;font-size:15px;
+  }
+
+  /* 房间内开局设置的紧凑步进器 */
+  .numstep.compact{
+    border-radius:7px;border-color:var(--line);
+  }
+  .numstep.compact input[type=number],
+  .numstep.compact input[type=text]{
+    width:32px;padding:3px 2px;font-size:12.5px;
+  }
+  .numstep.compact .nstep-btn{
+    width:20px;min-width:20px;font-size:13px;
+  }
+  .sf .numstep{flex:1 1 0;min-width:72px;max-width:96px;}
+  .numstep.compact:has(input:disabled[type=text]){
+    width:48px;min-width:48px;max-width:48px;justify-content:center;
+  }
+  .numstep.compact:has(input:disabled[type=text]) .nstep-btn{
+    display:none;
+  }
+  .numstep.compact:has(input:disabled[type=text]) input{
+    width:100%;font-weight:700;text-align:center;font-size:14px;
+  }
+
+  /* 昵称 + 骰子：骰子手动重随一位语料作者（图标是手写 SVG，不用 emoji） */
+  .nickbox{display:flex;align-items:center;gap:8px;}
+  .nickbox input[type=text]{width:150px;}
+  .dice{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:36px;height:36px;padding:0;flex:0 0 auto;border-radius:10px;color:var(--text);
+  }
+  .dice svg{display:block;}
+  .dice.spin svg{animation:diceSpin .5s ease-in-out;}
+  @keyframes diceSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+  .kinds{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+  .kinds label{
+    display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;
+    padding:4px 11px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none;background:#fff;
+    transition:.15s;font-weight:600;
+  }
+  .kinds input{accent-color:var(--ink-b);margin:0;width:13px;height:13px;}
+  .kinds label:has(input:checked){border-color:var(--ink-b);background:#EDF4FB;color:var(--ink-b);}
+  .roomjoin{display:flex;gap:8px;margin-top:14px;}
+  .roomjoin input{flex:1;text-transform:uppercase;letter-spacing:.18em;font-weight:700;text-align:center;font-size:15px;}
+  /* 房号直入：一行就够，占位比原来的「加入一局」卡片小得多 */
+  .quickjoin{
+    display:flex;align-items:center;gap:8px;margin-top:14px;padding-top:12px;
+    border-top:1px dashed var(--soft);
+  }
+  .quickjoin>span{flex:0 0 auto;font-size:12.5px;color:var(--muted);}
+  .quickjoin input[type=text]{
+    flex:1 1 auto;min-width:0;text-align:center;text-transform:uppercase;
+    letter-spacing:.18em;font-weight:700;font-size:14px;
+  }
+  .quickjoin button{flex:0 0 auto;padding:6px 13px;font-size:12.5px;}
+
+  /* ---------- 房间列表（大厅里直接看到现在有哪些局） ---------- */
+  .sechead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 4px;}
+  .sechead .sec-title{margin:0;}
+  .sechead .cnt{font-size:12px;color:var(--faint);font-weight:600;}
+  .sechead .hint{font-size:11.5px;color:var(--faint);font-weight:400;margin-left:6px;}
+  .roomlist{list-style:none;margin:6px 0 0;padding:0;min-width:0;max-width:100%;}
+  .roomrow{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px dashed var(--soft);min-width:0;max-width:100%;}
+  .roomrow:last-child{border-bottom:0;}
+  .rcode{
+    flex:0 0 auto;font-variant-numeric:tabular-nums;font-size:17px;font-weight:800;
+    letter-spacing:.06em;color:var(--text);width:44px;
+  }
+  .rmain{flex:1 1 auto;min-width:0;overflow:hidden;}
+  .rwho{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .rwho .vs{font-weight:400;color:var(--faint);font-size:12px;margin:0 4px;}
+  .rwho .empty-seat{font-weight:400;color:var(--faint);}   /* 缺席一方统一用灰字「空位」，不再出现「—」 */
+  .rspec{font-size:11.5px;color:var(--muted);margin-top:1px;word-break:break-all;overflow-wrap:anywhere;}
+  .rwatch{margin-left:8px;color:#6C7A90;}
+  .rwatch:before{content:'·';margin-right:5px;}
+  /* 开发者模式：私密房的 5 位房号比 3 位数字宽，固定 44px 会把它压出格子 */
+  .rcode.wide{width:auto;font-size:15px;letter-spacing:.03em;}
+  .rpriv{
+    display:inline-block;margin-right:6px;padding:1px 6px;border-radius:999px;
+    font-size:10.5px;font-weight:700;color:#6A3FA0;border:1px solid #E2D5F5;background:#F7F3FE;
+  }
+  .devnote{
+    font-size:12px;line-height:1.6;color:#4A3577;background:#F7F3FE;
+    border:1px solid #E2D5F5;border-radius:8px;padding:7px 10px;margin:0 0 8px;
+    list-style:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  }
+  .devoff{
+    flex:0 0 auto;padding:2px 9px;font-size:11.5px;line-height:1.6;cursor:pointer;
+    color:#6A3FA0;background:#fff;border:1px solid #D9C7F0;border-radius:999px;
+  }
+  .devoff:hover{background:#F1E8FD;}
+  .rstate{
+    flex:0 0 auto;font-size:11.5px;padding:2px 8px;border-radius:999px;
+    border:1px solid var(--line);background:#F7F9FC;color:var(--muted);white-space:nowrap;
+  }
+  .rstate.live{color:var(--ink-b);border-color:#CFE1F5;background:#EDF4FB;}
+  .rstate.pause{color:#4A3577;border-color:#DED2F5;background:#F7F3FE;}
+  .rstate.wait{color:#8A5A0B;border-color:#F4DEB2;background:#FFF9EE;}
+  .roomrow button{flex:0 0 auto;padding:5px 12px;font-size:12px;}
+  .tips{font-size:12.5px;color:var(--muted);line-height:1.75;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);}
+  .tips b{color:var(--text);}
+
+  /* ---------- 回合 / 比分（照搬主持台） ---------- */
+  .turnbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .roundinfo{font-size:13px;color:var(--muted);}
+  .roundinfo b{color:var(--text);font-size:15px;}
+  .teams{display:flex;gap:8px;}
+  .team{
+    display:flex;align-items:center;gap:8px;padding:7px 13px;border-radius:999px;
+    border:2px solid var(--line);background:#fff;font-size:13px;font-weight:700;color:var(--muted);
+    transition:.18s;
+  }
+  .team .swatch{width:12px;height:12px;border-radius:4px;}
+  .team.tA .swatch{background:var(--ink-a);}
+  .team.tB .swatch{background:var(--ink-b);}
+  .team.tC .swatch{background:var(--ink-c);}
+  .team.tD .swatch{background:var(--ink-d);}
+  .team.tA.active{border-color:var(--ink-a);color:var(--ink-a);background:#FCF0EE;box-shadow:0 0 0 4px rgba(194,53,42,.08);}
+  .team.tB.active{border-color:var(--ink-b);color:var(--ink-b);background:#EDF4FB;box-shadow:0 0 0 4px rgba(30,111,184,.08);}
+  .team.tC.active{border-color:var(--ink-c);color:var(--ink-c);background:#FFFBF0;box-shadow:0 0 0 4px rgba(222,155,0,.12);}
+  .team.tD.active{border-color:var(--ink-d);color:var(--ink-d);background:#EDF8F1;box-shadow:0 0 0 4px rgba(24,134,75,.08);}
+  .team .num{font-variant-numeric:tabular-nums;font-size:15px;}
+
+  .scorebar{
+    height:12px;border-radius:999px;overflow:hidden;display:flex;background:var(--blank);
+    margin-top:12px;border:1px solid var(--line);
+  }
+  .scorebar span{display:block;height:100%;transition:width .35s cubic-bezier(.4,0,.2,1);}
+  .seg-a{background:var(--ink-a);}
+  .seg-b{background:var(--ink-b);}
+  .seg-c{background:var(--ink-c);}
+  .seg-d{background:var(--ink-d);}
+  .scorelegend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px;}
+  .scorelegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
+  .k-a{background:var(--ink-a);}.k-b{background:var(--ink-b);}.k-c{background:var(--ink-c);}.k-d{background:var(--ink-d);}.k-n{background:var(--blank);border:1px solid var(--line);}
+  .scorelegend b{color:var(--text);font-variant-numeric:tabular-nums;}
+
+  /* ---------- 棋盘（与主持台完全一致） ---------- */
+  .boardwrap{padding:14px;}
+  /* 无缝网格：gap=0，靠每格 1px 边框画格线；与同色邻格相接的那条边框设为透明，
+     背景色便从边框下方透出，同色相邻格自然连成整片。 */
+  .board{
+    display:grid;gap:0;width:100%;
+    background:#fff;padding:0;border:1px solid var(--grid);border-radius:12px;overflow:hidden;
+    user-select:none;
+  }
+  .cell{
+    aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
+    background:var(--blank);color:var(--blank-text);
+    border-right:1px solid var(--grid);border-bottom:1px solid var(--grid);
+    font-size:var(--cell-fs,27px);font-weight:600;line-height:1;position:relative;
+    user-select:none;border-radius:0;
+    transition:background .18s,color .18s,box-shadow .18s;
+  }
+  /* 同色相接 → 格线隐形，墨块连成一片 */
+  .cell.nb-r{border-right-color:transparent;}
+  .cell.nb-b{border-bottom-color:transparent;}
+  /* 注意：own-A~D 不能设置 border-color，否则会盖掉 nb-r/nb-b 的透明格线 */
+  .cell.own-A{background:var(--ink-a);color:#fff;}
+  .cell.own-B{background:var(--ink-b);color:#fff;}
+  .cell.own-C{background:var(--ink-c);color:#fff;text-shadow:0 1px 2px rgba(90,50,0,.28);}
+  .cell.own-D{background:var(--ink-d);color:#fff;}
+  /* ---- 出手前的实时预览：一律用当前出手方的半透明墨色（与主持台逐条对齐） ----
+     新占：半透明填充 + 实线内框；抢夺：半透明墨色覆在敌色上 + 虚线内框；
+     己方格：底色不动，只加白色内框。 */
+  .cell.pv-A.pv-new{background:var(--pv-a);color:var(--blank-text);box-shadow:inset 0 0 0 3px var(--ink-a);}
+  .cell.pv-B.pv-new{background:var(--pv-b);color:var(--blank-text);box-shadow:inset 0 0 0 3px var(--ink-b);}
+  .cell.pv-C.pv-new{background:var(--pv-c);color:var(--blank-text);box-shadow:inset 0 0 0 3px var(--ink-c);}
+  .cell.pv-D.pv-new{background:var(--pv-d);color:var(--blank-text);box-shadow:inset 0 0 0 3px var(--ink-d);}
+  .cell.pv-A.pv-cap{background:var(--pv-ab);color:#fff;outline:2px dashed var(--ink-a);outline-offset:-3px;}
+  .cell.pv-B.pv-cap{background:var(--pv-ba);color:#fff;outline:2px dashed var(--ink-b);outline-offset:-3px;}
+  .cell.pv-C.pv-cap{background:#9E7432;color:#fff;outline:2px dashed var(--ink-c);outline-offset:-3px;}
+  .cell.pv-D.pv-cap{background:#3E745A;color:#fff;outline:2px dashed var(--ink-d);outline-offset:-3px;}
+  .cell.pv-A.pv-hold,.cell.pv-B.pv-hold,.cell.pv-C.pv-hold,.cell.pv-D.pv-hold{box-shadow:inset 0 0 0 3px rgba(255,255,255,.62);}
+  /* 本手刚变化的格子：白色内描边（与主持台同一套视觉） */
+  .cell.flash::after{
+    content:"";position:absolute;inset:0;box-sizing:border-box;
+    border:3px solid rgba(255,255,255,.95);pointer-events:none;
+    animation:flashRing 1.05s ease-out forwards;
+  }
+  @keyframes flashRing{0%{opacity:0;}10%{opacity:1;}72%{opacity:1;}100%{opacity:0;}}
+
+  /* ---------- 录入诗句（照搬主持台的 textarea） ---------- */
+  textarea{
+    width:100%;min-height:64px;resize:vertical;font-family:inherit;
+    font-size:17px;letter-spacing:1px;line-height:1.5;padding:10px 12px;
+    border:1px solid var(--line);border-radius:10px;background:#FBFCFE;color:var(--text);
+    outline:none;transition:.15s;
+  }
+  textarea:focus{border-color:var(--ink-b);box-shadow:0 0 0 3px rgba(30,111,184,.12);background:#fff;}
+  /* 非自己回合：用 readonly（不是 disabled），仍可点击、给指引 */
+  textarea.locked{background:#F1F4F9;border-color:#E4EAF3;color:var(--faint);cursor:pointer;}
+  textarea.locked:focus{border-color:var(--line);box-shadow:none;background:#F1F4F9;}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+
+  .timer{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;}
+  .clock{
+    font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.5px;
+    min-width:64px;text-align:center;padding:2px 10px;border-radius:9px;background:#F1F4F9;color:var(--text);
+  }
+  .clock.run{background:#E9ECEF;color:var(--text);}
+  .clock.low{background:#DEE2E6;color:#1A1D20;font-weight:800;}
+  .turnhint{font-size:13px;color:var(--muted);}
+  .turnhint b{color:var(--text);}
+
+  .msg{font-size:12.5px;margin-top:9px;padding:8px 10px;border-radius:9px;display:none;line-height:1.55;}
+  .msg.show{display:block;}
+  .msg.ok{background:#EAF6EF;color:#1E6B45;border:1px solid #C6E7D4;}
+  .msg.warn{background:#FFF6E6;color:#8A5A0B;border:1px solid #F4DEB2;}
+  .msg.err{background:#FDEDEB;color:var(--danger);border:1px solid #F6CFCA;}
+  .msg .src{opacity:.85;}
+
+  /* ---------- 协作请求条（撤销一步 / 提前结算 需对手同意） ---------- */
+  .consentbar{
+    margin-top:9px;padding:9px 11px;border-radius:10px;border:1px solid #F4DEB2;background:#FFF9EE;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;color:#8A5A0B;
+  }
+  .consentbar.mine{background:#EDF4FB;border-color:#CFE1F5;color:#2C4A78;}
+  .consentbar .cbody{flex:1 1 120px;min-width:0;line-height:1.5;}
+  .consentbar .cbtns{display:flex;gap:6px;flex:0 0 auto;}
+  .consentbar button{padding:5px 10px;font-size:12px;}
+
+  /* ---------- 准备条（双方都点了才开始） ---------- */
+  .readybar{
+    margin-bottom:10px;padding:10px 12px;border-radius:11px;border:1px solid #CFE1F5;background:#F4F8FE;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;color:#2C4A78;
+  }
+  .readybar .rbody{flex:1 1 150px;min-width:0;}
+  .readybar .rtitle{font-weight:700;line-height:1.4;}
+  .rpills{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap;}
+  .rpill{
+    display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;
+    padding:2px 9px;font-size:11.5px;background:#fff;color:var(--muted);white-space:nowrap;
+  }
+  .rpill.on{font-weight:700;}
+  .rpill.tA.on{border-color:var(--ink-a);color:var(--ink-a);background:#FCF0EE;}
+  .rpill.tB.on{border-color:var(--ink-b);color:var(--ink-b);background:#EDF4FB;}
+  .rpill.tC.on{border-color:var(--ink-c);color:var(--ink-c);background:#FFFBF0;}
+  .rpill.tD.on{border-color:var(--ink-d);color:var(--ink-d);background:#EDF8F1;}
+  .readybar .cbtns{display:flex;gap:6px;flex:0 0 auto;}
+  .readybar button{padding:6px 12px;font-size:12.5px;}
+
+  /* ---------- 裁判提示条 ---------- */
+  .refbar{
+    margin-bottom:10px;padding:8px 11px;border-radius:10px;border:1px solid #E7D8B8;background:#FCF7EC;
+    display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:12.5px;color:#7A5B14;
+  }
+  .refbar .rtag{
+    flex:0 0 auto;font-size:11px;font-weight:700;letter-spacing:1px;
+    background:#F6E6C4;color:#6E4F0B;border-radius:999px;padding:2px 9px;
+  }
+  .refbar .rtext{flex:1 1 160px;min-width:0;line-height:1.5;}
+
+  /* ---------- 开局设置（正式开局前可改，开局后整块收起） ---------- */
+  .setupbox{
+    margin-bottom:10px;padding:10px 12px;border-radius:11px;border:1px solid var(--line);background:#FBFCFE;
+  }
+  .setupbox .shead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+  .setupbox .stag{
+    flex:0 0 auto;font-size:11px;font-weight:700;letter-spacing:1px;
+    background:#E8EEF8;color:#2C4A78;border-radius:999px;padding:2px 9px;
+  }
+  .setupbox .shint{font-size:12px;color:var(--muted);}
+  .sgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 10px;}
+  .sf{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);min-width:0;}
+  .sf>span{white-space:nowrap;}
+  .sf input{
+    flex:1 1 0;min-width:34px;width:auto;padding:4px 6px;font-size:13px;font-variant-numeric:tabular-nums;
+    border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--text);outline:none;
+  }
+  .sf input:focus{border-color:var(--ink-b);box-shadow:0 0 0 3px rgba(30,111,184,.1);}
+  .sf input:disabled{background:#F1F4F9;color:var(--faint);cursor:not-allowed;}
+  .sf i{font-style:normal;font-size:11px;color:var(--faint);white-space:nowrap;}
+  .sline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;}
+  .sline .kinds{margin:0;}
+  .sdirty{font-size:11.5px;color:#8A5A00;}
+  .sdirty.ok{color:var(--muted);}
+
+  /* ---------- 暂停条 ---------- */
+  .pausebar{
+    margin-top:9px;padding:9px 11px;border-radius:10px;border:1px solid #DED2F5;background:#F7F3FE;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;color:#4A3577;
+  }
+  .pausebar .cbody{flex:1 1 120px;min-width:0;line-height:1.5;}
+  .pausebar .cbtns{display:flex;gap:6px;flex:0 0 auto;}
+  .pausebar button{padding:5px 10px;font-size:12px;}
+  .clock.paused{background:#F1ECFB;color:#4A3577;}
+  .clock.hold{background:#FFF2E4;color:#8A5A0B;}
+
+  /* ---------- 争议裁决条（诗句未收录，计时暂停等对手判） ---------- */
+  .disputebar{
+    margin-top:9px;padding:9px 11px;border-radius:10px;border:1px solid #F3C98B;background:#FFFAF0;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;color:#8A5A0B;
+  }
+  .disputebar.mine{background:#F4F8FE;border-color:#CFE1F5;color:#2C4A78;}
+  .disputebar .dbody{flex:1 1 140px;min-width:0;line-height:1.55;}
+  .disputebar .dbody b{font-weight:700;}
+  .disputebar .cbtns{display:flex;gap:6px;flex:0 0 auto;}
+  .disputebar button{padding:5px 10px;font-size:12px;}
+
+  /* ---------- 观众条 ---------- */
+  .watchbox{
+    margin-bottom:10px;padding:10px 12px;border-radius:11px;border:1px solid #DCE3EE;background:#F7F9FC;
+    font-size:12.5px;color:var(--muted);
+  }
+  .watchbox .whead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .watchbox .wtag{
+    font-size:11px;font-weight:700;letter-spacing:.06em;color:#fff;background:#7C8CA6;
+    border-radius:6px;padding:1px 7px;
+  }
+  .watchbox .whint{line-height:1.5;}
+  .watchbox button{padding:6px 12px;font-size:12.5px;}
+
+  /* ---------- 导出工具条 ---------- */
+  .row.tools button{padding:7px 10px;font-size:12.5px;}
+
+  /* ---------- 飞花记录（照搬主持台） ---------- */
+  .loglist{list-style:none;margin:0;padding:0;max-height:min(46vh,420px);overflow:auto;overflow-anchor:none;}
+  .loglist li{
+    display:flex;gap:9px;padding:8px 4px;border-bottom:1px dashed var(--soft);font-size:13px;align-items:flex-start;
+  }
+  .loglist li:last-child{border-bottom:0;}
+  .loglist .badge{
+    flex:0 0 auto;width:22px;height:22px;border-radius:7px;color:#fff;
+    font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px;
+  }
+  .bA{background:var(--ink-a);}.bB{background:var(--ink-b);}.bC{background:var(--ink-c);}.bD{background:var(--ink-d);}
+  .loglist .body{flex:1 1 auto;min-width:0;}
+  .loglist .line{font-size:14.5px;letter-spacing:.5px;word-break:break-all;}
+  .loglist .line.dash{color:var(--muted);letter-spacing:1px;}
+  .loglist .meta{font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .loglist .meta em{font-style:normal;font-weight:700;}
+  .loglist .src{color:var(--muted);}
+  /* 记录里「新占 / 抢夺」用阵营色（与主持台版一致，AA：赤 5.5:1 / 青 4.6:1） */
+  .em-a{color:var(--ink-a);}
+  .em-b{color:var(--ink-b);}
+  .em-c{color:var(--ink-c);}
+  .em-d{color:var(--ink-d);}
+  /* 实时预览的命中统计（输入框下方一行小字） */
+  .pvhint{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.45;font-variant-numeric:tabular-nums;}
+  .pvhint b{color:var(--text);}
+  .pvhint .warn{color:#8A5A00;}
+  .empty{font-size:12.5px;color:var(--muted);text-align:center;padding:18px 0;}
+
+  /* ---------- 房间面板：成员 / 事件 两个页签 ----------
+     放在飞花记录下方，不挤占操作台首屏（手机上录入框仍在首屏内）。 */
+  .sechead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+  .tabs{display:flex;gap:4px;background:var(--soft);border-radius:10px;padding:3px;}
+  .tab{
+    border:0;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;
+    padding:4px 10px;border-radius:8px;cursor:pointer;line-height:1.4;
+  }
+  .tab b{font-weight:700;margin-left:2px;}
+  .tab.on{background:var(--card);color:var(--text);box-shadow:0 1px 2px rgba(23,43,77,.1);}
+
+  /* 成员列表 */
+  .memlist{list-style:none;margin:0;padding:0;max-height:min(40vh,340px);overflow:auto;}
+  .memlist li{
+    display:flex;align-items:center;gap:8px;padding:7px 2px;
+    border-bottom:1px dashed var(--soft);font-size:13px;
+  }
+  .memlist li:last-child{border-bottom:0;}
+  .mdot{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:var(--grid);}
+  .mdot.tA{background:var(--ink-a);}
+  .mdot.tB{background:var(--ink-b);}
+  .mdot.tC{background:var(--ink-c);}
+  .mdot.tD{background:var(--ink-d);}
+  .mdot.iface{background:transparent;border:1.5px dashed var(--grid);}
+  .mname{
+    flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-weight:600;letter-spacing:.2px;
+  }
+  .mname.empty-name{font-weight:400;color:var(--faint);}
+  .mtag{
+    flex:0 0 auto;font-size:11px;line-height:1.5;padding:1px 6px;border-radius:6px;
+    background:var(--soft);color:var(--muted);border:1px solid transparent;
+  }
+  .mtag.you{background:#EAF2FE;color:#1B5FA0;border-color:#C9DDF5;}
+  .mtag.seatA{background:#FCF0EE;color:var(--ink-a);border-color:#F2D3CE;}
+  .mtag.seatB{background:#EDF4FB;color:var(--ink-b);border-color:#CFE2F4;}
+  .mtag.seatC{background:#FFFBF0;color:var(--ink-c);border-color:#F5DEB3;}
+  .mtag.seatD{background:#EDF8F1;color:var(--ink-d);border-color:#BEE3D0;}
+  .mtag.watch{background:#F2F4F8;color:var(--muted);}
+  .mtag.off{background:#FBF0DD;color:#8A5A00;border-color:#EEDDBB;}   /* 离线：4.7:1 */
+  .mtag.ref{background:#FCF7EC;color:#7A5B14;border-color:#E7D8B8;}   /* 裁判：6.9:1 */
+  .mact{flex:0 0 auto;display:flex;gap:4px;}
+  .mact button{
+    padding:2px 8px;font-size:11.5px;border-radius:7px;border:1px solid var(--line);
+    background:var(--card);color:var(--muted);cursor:pointer;
+  }
+  .mact button:hover{border-color:var(--grid);color:var(--text);}
+  .mact button.danger{color:var(--danger);border-color:#EFD5D1;}
+  /* 行内改名 */
+  .memlist li.editing{padding:5px 2px;}
+  .nickedit{display:flex;gap:6px;flex:1 1 auto;min-width:0;}
+  .nickedit input{
+    flex:1 1 auto;min-width:0;padding:4px 8px;font:inherit;font-size:13px;
+    border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);
+  }
+  .nickedit input:focus{outline:2px solid #C9DDF5;outline-offset:0;border-color:#8FB8E0;}
+  .nickedit button{padding:4px 10px;font-size:12px;border-radius:8px;}
+
+  /* 事件时间线 */
+  .evlist{list-style:none;margin:0;padding:0;max-height:min(40vh,340px);overflow:auto;}
+  .evlist li{
+    display:flex;gap:8px;padding:5px 2px;font-size:12.5px;line-height:1.5;
+    border-bottom:1px dashed var(--soft);
+  }
+  .evlist li:last-child{border-bottom:0;}
+  .evtime{
+    flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--faint);
+    font-size:11.5px;padding-top:1px;letter-spacing:0;
+  }
+  .evtext{flex:1 1 auto;min-width:0;color:var(--text);word-break:break-word;}
+  /* 事件文本统一设为黑灰色（--text: #1F2937） */
+  .evtext.k-in,
+  .evtext.k-out,
+  .evtext.k-rule,
+  .evtext.k-end,
+  .evtext.k-fly{color:var(--text);}
+  /* 事件里的昵称：选手用各自阵营色，裁判用棕色，观众用深蓝灰 */
+  .evtext .ev-n-a{color:var(--ink-a);font-weight:700;}
+  .evtext .ev-n-b{color:var(--ink-b);font-weight:700;}
+  .evtext .ev-n-c{color:var(--ink-c);font-weight:700;}
+  .evtext .ev-n-d{color:var(--ink-d);font-weight:700;}
+  .evtext .ev-n-ref{color:#7B4A12;font-weight:700;}
+  .evtext .ev-n-watch{color:#2C4A78;font-weight:700;}
+
+  /* 诗句里命中的字：新占＝墨黑实线 / 抢夺＝己方笔色实线 / 己方＝中性灰点状线。
+     己方必须也用 text-decoration（只换 style），不要用 text-emphasis —— 纵向坐标系不同会错位。 */
+  .mk{
+    text-decoration-line:underline;
+    text-decoration-thickness:2px;
+    text-underline-offset:4px;
+    text-decoration-skip-ink:none;
+    -webkit-text-decoration-skip-ink:none;
+  }
+  .mk-new{text-decoration-color:var(--text);}
+  .mk-cap{text-decoration-color:var(--ink-a);}
+  .tA .mk-cap{text-decoration-color:var(--ink-a);}
+  .tB .mk-cap{text-decoration-color:var(--ink-b);}
+  .tC .mk-cap{text-decoration-color:var(--ink-c);}
+  .tD .mk-cap{text-decoration-color:var(--ink-d);}
+  .mk-hold{text-decoration-style:dotted;text-decoration-color:var(--hit-hold);}
+
+  /* ---------- 折叠区（规则） ---------- */
+  details{border-top:1px solid var(--line);}
+  details summary{
+    cursor:pointer;font-size:12.5px;font-weight:600;color:var(--muted);
+    padding:10px 16px;list-style:none;
+  }
+  details summary::-webkit-details-marker{display:none;}
+  details summary:before{content:"▸ ";color:var(--muted);}
+  details[open] summary:before{content:"▾ ";}
+  details .detbody{padding:0 16px 14px;font-size:12.5px;color:var(--muted);}
+  ol.rules{margin:6px 0 0 18px;padding:0;}
+  ol.rules li{margin-bottom:5px;line-height:1.6;}
+
+  /* ---------- 浮层（照搬主持台 overlay / modal） ---------- */
+  .overlay{
+    position:fixed;inset:0;background:rgba(23,35,54,.55);backdrop-filter:blur(3px);
+    display:flex;align-items:center;justify-content:center;padding:20px;z-index:50;
+  }
+  /* 2026-10-24：#netMask 断线遮罩已移除（SSE 抖动时会频繁一闪而过，反而干扰）。
+     断线期间不再显示任何浮层，但重连与房间探测逻辑保留在 app.js 里。 */
+  .modal{
+    background:#fff;border-radius:18px;max-width:520px;width:100%;max-height:88vh;overflow:auto;
+    padding:26px 26px 20px;box-shadow:0 24px 60px rgba(12,24,44,.28);
+  }
+  .modal h2{font-size:18px;margin:0 0 6px;}
+  .modal p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.7;}
+  .bigcode{
+    font-size:34px;font-weight:800;letter-spacing:.22em;margin:16px 0 4px;
+    font-variant-numeric:tabular-nums;text-align:center;
+  }
+  .copyrow{display:flex;gap:8px;margin-top:16px;}
+  .copyrow input{flex:1;font-size:12px;color:var(--muted);}
+
+  /* 结算（照搬主持台 .winner/.winname/.final/.fbox） */
+  .winner{font-size:13px;font-weight:700;letter-spacing:2px;color:var(--muted);}
+  .winname{font-size:30px;font-weight:800;margin:4px 0 16px;letter-spacing:2px;}
+  .final{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px;}
+  .final .fbox{border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;background:#FBFCFE;}
+  .fbox .fv{font-size:28px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.15;}
+  .fbox .fk{font-size:12px;color:var(--muted);margin-top:2px;}
+
+  .toast{
+    position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--text);color:#fff;
+    padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:60;
+  }
+  .toast.show{opacity:1;}
+
+  /* ---------- 导出预览层（照搬主持台：整图塞进弹窗，可切 1:1） ---------- */
+  #shotOverlay{display:none;z-index:60;}
+  #shotOverlay.show{display:flex;}
+  #shotOverlay .modal{
+    max-width:min(1080px,94vw);height:88vh;max-height:88vh;
+    display:flex;flex-direction:column;overflow:auto;
+  }
+  #shotOverlay .modal>*{flex:0 0 auto;}
+  #shotOverlay .shotbox{
+    border:1px solid var(--line);border-radius:12px;background:#F5F8FC;padding:10px;
+    flex:1 1 0;min-height:120px;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #shotOverlay .shotbox img{
+    max-width:100%;max-height:100%;width:auto;height:auto;
+    object-fit:contain;display:block;border-radius:8px;
+  }
+  #shotOverlay .shotbox.actual{display:block;overflow:auto;}
+  #shotOverlay .shotbox.actual img{max-width:none;max-height:none;margin:0 auto;}
+  .shotnote{font-size:12.5px;color:var(--muted);margin:10px 0 0;line-height:1.6;}
+
+  /* ---------- 导出/导入本地对局进度 ---------- */
+  .backup-code-box{
+    width:100%;box-sizing:border-box;margin-top:10px;
+    font-family:Consolas, Monaco, monospace;font-size:12px;line-height:1.45;
+    padding:8px 10px;border:1px solid var(--line);border-radius:10px;
+    background:#FAFBFE;color:var(--text);resize:vertical;min-height:96px;
+  }
+  .backup-file-picker{display:flex;align-items:center;gap:10px;margin-top:12px;}
+  .backup-file-picker .filename{
+    flex:1 1 auto;min-width:0;font-size:12.5px;color:var(--muted);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .shotmeta{font-size:12.5px;color:var(--muted);margin:2px 0 12px;font-variant-numeric:tabular-nums;}
+
+  /* ============================================================
+     手机端：目标是一屏之内看到「棋盘 + 出手区」。
+     做法是把重复信息砍掉（右上角语料数、操作台里重复的双方色块）、
+     把每处内边距压到 8–12px、把字号降一档，而不是缩小棋盘本身。
+     ============================================================ */
+  @media (max-width:760px){
+    .wrap{padding:10px 10px 26px;}
+    header.top{align-items:center;gap:8px;margin-bottom:10px;}
+    h1{font-size:17px;letter-spacing:0;}
+    h1 .tag{font-size:11px;padding:2px 7px;margin-left:6px;}
+    .head-tools{gap:6px;}
+    header.top button{padding:6px 9px;font-size:12px;}
+    .layout{gap:10px;}
+    .side{gap:10px;}
+    .card .pad{padding:10px 12px;}
+    .notice{padding:10px 18px;gap:10px;}
+    .boardwrap{padding:8px;}
+    .turnbar{gap:6px;}
+    .roundinfo{font-size:12px;}
+    .roundinfo b{font-size:13px;}
+    .teams{gap:6px;}
+    .team{padding:4px 9px;font-size:12px;gap:5px;border-width:1.5px;}
+    .team .num{font-size:13px;}
+    .scorebar{margin-top:8px;height:10px;}
+    /* 图例里的赤/青格数已经由上面的队伍胶囊显示，手机上先让位给棋盘 */
+    .scorelegend{display:none;}
+    .dup{display:none;}                /* 操作台上重复的「当前出手方」色块 */
+    .sec-title{margin-bottom:6px;}
+    .sec-title.hide-sm{display:none;}
+    textarea{min-height:46px;font-size:15px;padding:8px 10px;}
+    .timer{margin-top:8px;gap:8px;}
+    .clock{font-size:19px;min-width:52px;padding:1px 8px;}
+    .turnhint{font-size:12px;}
+    .row{gap:6px;}
+    .row.tools button{flex:1 1 30%;padding:7px 8px;font-size:12px;}
+    #btnSubmit,#btnPass{padding:8px 10px;}
+    .readybar{padding:8px 10px;font-size:12px;}
+    .readybar .rtitle{font-size:12px;}
+    .rpill{font-size:11px;padding:1px 7px;}
+    .nickbox{flex:1 1 auto;max-width:160px;min-width:0;}
+    .nickbox input[type=text]{width:100%;min-width:0;}
+    .roomlist{margin-top:4px;min-width:0;max-width:100%;}
+    .roomrow{gap:6px;padding:7px 0;min-width:0;max-width:100%;}
+    .rcode{font-size:14px;width:42px;flex:0 0 auto;letter-spacing:0;}
+    .rmain{flex:1 1 0;min-width:0;overflow:hidden;}
+    .rwho{font-size:12.5px;}
+    .rspec{font-size:11px;}
+    .rstate{font-size:11px;padding:2px 6px;flex:0 0 auto;}
+    .roomrow button{padding:4px 8px;font-size:11.5px;flex:0 0 auto;}
+    .game-notice{padding:9px 36px 9px 14px;margin-bottom:10px;}
+    .notice-close{right:8px;font-size:18px;}
+    .loglist{max-height:32vh;}
+    .loglist li{padding:7px 2px;}
+    .loglist .line{font-size:13.5px;}
+    /* 成员 / 事件面板：手机上再压一档，别抢棋盘的位置 */
+    .memlist,.evlist{max-height:30vh;}
+    .memlist li{padding:6px 2px;gap:6px;font-size:12.5px;}
+    .evlist li{padding:4px 2px;font-size:12px;gap:6px;}
+    .tab{padding:3px 9px;font-size:12px;}
+    .mact button{padding:2px 7px;font-size:11px;}
+    details summary{padding:8px 12px;}
+    .modal{padding:18px 16px 14px;border-radius:14px;}
+    .bigcode{font-size:28px;}
+    #shotOverlay .modal{height:92vh;max-height:92vh;max-width:96vw;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>飞花斯普拉遁<span class="tag">在线对战</span></h1>
+    <div class="head-tools hidden" id="headInfo">
+      <span class="sizefield" title="点击复制房间号">房号 <b id="roomChip" style="font-size:13px;letter-spacing:.12em;cursor:pointer;color:var(--text)">----</b></span>
+      <button class="fb-open" id="btnFbGame" title="向开发者反馈">反馈</button>
+      <button id="btnLeave">离开房间</button>
+    </div>
+  </header>
+
+  <!-- ============ 大厅 ============ -->
+  <section id="lobby" class="lobby">
+    <!-- 公告：默认不占位（.hidden）。有内容时由 app.js 填进来，横跨两列 -->
+    <div class="notice empty" id="notice" role="status">
+      <span class="ntag" id="noticeTag">公告</span>
+      <p class="ntext" id="noticeText">暂无公告</p>
+    </div>
+
+    <div class="card">
+      <div class="pad">
+        <p class="sec-title">创建房间</p>
+        <div class="formrow">
+          <label>你的名字</label>
+          <div class="nickbox">
+            <input type="text" id="nick" maxlength="12" placeholder="随机诗人">
+            <button class="dice" id="btnReNick" type="button" title="换一位诗人" aria-label="换一位诗人">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="3.3" y="3.3" width="17.4" height="17.4" rx="4.8" stroke="currentColor" stroke-width="1.6"/>
+                <circle cx="8.1" cy="8.1" r="1.7" fill="currentColor"/>
+                <circle cx="15.9" cy="8.1" r="1.7" fill="currentColor"/>
+                <circle cx="12" cy="12" r="1.7" fill="currentColor"/>
+                <circle cx="8.1" cy="15.9" r="1.7" fill="currentColor"/>
+                <circle cx="15.9" cy="15.9" r="1.7" fill="currentColor"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="formrow stack">
+          <label>模式</label>
+          <div class="modelist" id="playerCountGroup">
+            <label class="modepill"><input type="radio" name="playerCount" value="1">单人</label>
+            <label class="modepill checked"><input type="radio" name="playerCount" value="2" checked>双人</label>
+            <label class="modepill"><input type="radio" name="playerCount" value="3">三人</label>
+            <label class="modepill"><input type="radio" name="playerCount" value="4">四人</label>
+          </div>
+        </div>
+        <div class="formrow">
+          <label>棋盘 <span class="hint">5–20 路</span></label>
+          <div class="numstep">
+            <button type="button" class="nstep-btn" data-step-for="size" data-dir="-1" tabindex="-1" aria-label="减少棋盘路数">−</button>
+            <input type="number" id="size" min="5" max="20" step="1" value="10" inputmode="numeric">
+            <button type="button" class="nstep-btn" data-step-for="size" data-dir="1" tabindex="-1" aria-label="增加棋盘路数">+</button>
+          </div>
+        </div>
+        <div class="formrow stack">
+          <label>轮数 <span class="hint" id="roundsHint">每轮各一手</span></label>
+          <div class="roundsgroup">
+            <div class="numstep">
+              <button type="button" class="nstep-btn" data-step-for="rounds" data-dir="-1" tabindex="-1" aria-label="减少轮数">−</button>
+              <input type="number" id="rounds" min="1" max="999" step="1" value="20" inputmode="numeric">
+              <button type="button" class="nstep-btn" data-step-for="rounds" data-dir="1" tabindex="-1" aria-label="增加轮数">+</button>
+            </div>
+            <label class="chk" id="endlessLab" title="勾选后不限轮数，直到棋盘填满、或双方同意提前结算">
+              <input type="checkbox" id="endless"> 战至最后一刻
+            </label>
+          </div>
+        </div>
+        <div class="formrow">
+          <label>每步时间 <span class="hint" id="turnSecondsHint">秒 · 超时自动放弃</span></label>
+          <div class="numstep">
+            <button type="button" class="nstep-btn" data-step-for="turnSeconds" data-dir="-1" tabindex="-1" aria-label="减少每步时间">−</button>
+            <input type="number" id="turnSeconds" min="15" max="600" step="5" value="120" inputmode="numeric">
+            <button type="button" class="nstep-btn" data-step-for="turnSeconds" data-dir="1" tabindex="-1" aria-label="增加每步时间">+</button>
+          </div>
+        </div>
+        <div class="formrow" id="maxPoemLenRow">
+          <label>单次提交字数上限 <span class="hint" id="maxPoemLenHint">5–99 字</span></label>
+          <div class="numstep">
+            <button type="button" class="nstep-btn" data-step-for="maxPoemLen" data-dir="-1" tabindex="-1" aria-label="减少字数上限">−</button>
+            <input type="number" id="maxPoemLen" min="5" max="99" step="1" value="17" inputmode="numeric">
+            <button type="button" class="nstep-btn" data-step-for="maxPoemLen" data-dir="1" tabindex="-1" aria-label="增加字数上限">+</button>
+          </div>
+        </div>
+        <div class="formrow" id="limitCoupletRow">
+          <label>诗限同一联两句 <span class="hint" id="limitCoupletHint">限制律绝单次提交</span></label>
+          <label class="chk" id="limitCoupletLab" title="开启后，诗每次至多提交同一联前后两句且不得跨联；关闭后按字数上限放行">
+            <input type="checkbox" id="limitCouplet" checked> 开启
+          </label>
+        </div>
+        <div class="formrow" id="freeSubmitRow">
+          <label>自由提交模式 <span class="hint" id="freeSubmitHint">像单人模式一样随意提交</span></label>
+          <label class="chk" id="freeSubmitLab" title="开启后，完全关闭判定限制（不限字数上限、不限前后联句），只要语料有收录即可直接提交">
+            <input type="checkbox" id="freeSubmit"> 开启
+          </label>
+        </div>
+        <div class="formrow">
+          <label>低频字 <span class="hint" id="extraHint">0–100</span></label>
+          <div class="numstep">
+            <button type="button" class="nstep-btn" data-step-for="extra" data-dir="-1" tabindex="-1" aria-label="减少低频字数">−</button>
+            <input type="number" id="extra" min="0" max="100" step="1" value="0" inputmode="numeric">
+            <button type="button" class="nstep-btn" data-step-for="extra" data-dir="1" tabindex="-1" aria-label="增加低频字数">+</button>
+          </div>
+        </div>
+        <div class="formrow stack">
+          <label>语料</label>
+          <div class="kinds" id="kinds">
+            <label><input type="checkbox" value="诗" checked>诗</label>
+            <label><input type="checkbox" value="词" checked>词</label>
+            <label><input type="checkbox" value="曲" checked>曲</label>
+            <label><input type="checkbox" value="赋" checked>赋</label>
+            <label><input type="checkbox" value="文">文</label>
+          </div>
+        </div>
+        <div class="formrow" style="border-bottom:0;padding:6px 0 0;">
+          <label></label>
+          <label class="chk" id="privateLab" title="勾选后房间不会出现在当前房间列表中，只能通过5位房间号进入">
+            <input type="checkbox" id="isPrivate"> 私密房间
+          </label>
+        </div>
+        <button class="primary" id="btnCreate" style="width:100%;margin-top:16px;padding:11px">创建房间</button>
+
+        <!-- 房号直入：整块「加入一局」已经去掉，留一行就够用（有链接时 ?r= 房号 也会填在这里） -->
+        <div class="quickjoin">
+          <span>已有房号</span>
+          <input type="text" id="joinCode" maxlength="5" placeholder="输入房间号">
+          <button id="btnJoin">进入</button>
+        </div>
+        <div class="lobby-import-bar" style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);text-align:center;">
+          <button type="button" class="lite" id="btnOpenImport" style="padding:6px 14px;font-size:12.5px;border-radius:999px;" title="从本地 JSON 备份文件或存档代码恢复对局">导入本地进度恢复对局</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 当前房间：直接看到有哪些局，点一下就能进；不限高度，房间多就把页面撑长 -->
+    <div class="card">
+      <div class="pad" style="padding-bottom:8px;">
+        <div class="sechead">
+          <p class="sec-title">当前房间</p>
+          <span style="display:flex;align-items:center;gap:8px;">
+            <button class="fb-open lite" id="btnFbLobby" title="向开发者反馈">反馈</button>
+            <span class="cnt" id="roomCount">—</span>
+          </span>
+        </div>
+        <ul class="roomlist" id="roomList"><li class="empty">正在读取…</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 对战 ============ -->
+  <section id="game" class="hidden">
+    <!-- 对局公告：仅在对局中新发布时出现，带关闭按钮 -->
+    <div class="notice game-notice hidden" id="gameNotice" role="status">
+      <span class="ntag" id="gameNoticeTag">公告</span>
+      <p class="ntext" id="gameNoticeText"></p>
+      <button type="button" class="notice-close" id="btnCloseGameNotice" title="关闭公告" aria-label="关闭">×</button>
+    </div>
+    <div class="layout">
+
+      <!-- 左：棋盘 -->
+      <div class="side">
+        <div class="card">
+          <div class="pad turnbar">
+            <div class="roundinfo">第 <b id="roundNow">1</b> / <b id="roundAll">20</b> 轮 · <span id="cfgText"></span><span id="phaseText">等待对手</span></div>
+            <div class="teams" id="topTeams">
+              <div class="team tA" id="teamA"><span class="swatch"></span><span class="nm">赤营</span> <span class="num" id="numA">0</span></div>
+              <div class="team tB" id="teamB"><span class="swatch"></span><span class="nm">青营</span> <span class="num" id="numB">0</span></div>
+              <div class="team tC hidden" id="teamC"><span class="swatch"></span><span class="nm">金营</span> <span class="num" id="numC">0</span></div>
+              <div class="team tD hidden" id="teamD"><span class="swatch"></span><span class="nm">翠营</span> <span class="num" id="numD">0</span></div>
+            </div>
+          </div>
+          <div class="pad" style="padding-top:0;">
+            <div class="scorebar">
+              <span class="seg-a" id="segA" style="width:0%"></span>
+              <span class="seg-b" id="segB" style="width:0%"></span>
+              <span class="seg-c hidden" id="segC" style="width:0%"></span>
+              <span class="seg-d hidden" id="segD" style="width:0%"></span>
+            </div>
+            <div class="scorelegend">
+              <span id="legendA"><i class="k-a"></i>赤营 <b id="lgA">0</b> 格</span>
+              <span id="legendB"><i class="k-b"></i>青营 <b id="lgB">0</b> 格</span>
+              <span id="legendC" class="hidden"><i class="k-c"></i>金营 <b id="lgC">0</b> 格</span>
+              <span id="legendD" class="hidden"><i class="k-d"></i>翠营 <b id="lgD">0</b> 格</span>
+              <span><i class="k-n"></i>空白 <b id="lgN">100</b> 格</span>
+              <span>已出手 <b id="lgTurns">0</b> 句</span>
+              <span id="lgWatch" class="hidden">观众 <b id="lgWatchN">0</b> 人</span>
+            </div>
+          </div>
+          <div class="boardwrap">
+            <div class="board" id="board"></div>
+          </div>
+          <div class="pickhint hidden" id="pickHint">开局前，点棋盘上任意一格可以换一个字（在同一个字库内换：字库字换字库字、常用字换常用字、低频字换低频字）</div>
+          <details>
+            <summary>规则与判定逻辑</summary>
+            <div class="detbody">
+              <ol class="rules">
+                <li>棋盘：建房时随机抽 N×N 个不重复的字铺成方阵（5–20 路）。</li>
+                <li>涂色：某人飞出一句后，<b>诗句中所有出现在棋盘上的字</b>，对应格子全部涂成该方颜色。</li>
+                <li>合法性：本句命中的字里，<b>至少要有 1 个格子当前未涂色</b>；命中已涂色格可以抢夺。命中格全是已有颜色则无效。</li>
+                <li>判诗：提交的句子由服务端在权威语料里检索（整句命中 / 名句片段 / 异文等价 / 联句），<b>通过才落墨</b>，并给出出处。</li>
+                <li>胜负：满设定轮数（各方各飞相同句数）后结算，<b>己方颜色格子多者胜</b>；等同则平局。<b>棋盘被填满时立即结算</b>；选「战至最后一刻」时不限轮数。</li>
+                <li>时限：每手限时 <b id="limitRule">120</b> 秒（建局时可设），超时或点「放弃本回合」则不涂色、直接传给下一位。</li>
+                <li>撤销与结算：<b>撤销一步</b>、<b>提前结算</b>单人直接生效，双人及多人需对手点「同意」；棋盘填满或轮数用尽时自动结算。</li>
+                <li>准备与暂停：全员到齐后各点一次<b>「准备好了」</b>才开局；对局中<b>任意选手随时可暂停</b>，暂停期间倒计时冻结，任一方都能点「继续」。</li>
+                <li>观众与换人：选手可随时<b>下场观战</b>，位子一空计时就冻结；任何观众都能点<b>「坐到对应营」</b>补上，坐齐后自动继续。观众能看棋盘和记录，但看不到对手的输入。</li>
+                <li>未收录与超长裁决：提交超过字数上限（默认 17 字，单人模式不限）或语料中未收录时不会直接判负，而是<b>暂停计时</b>，由其他选手或裁判裁决——判<b>「有效」</b>就按字面正常涂色（记录标注「对手裁定有效」或「裁判 XX 裁定有效」），判<b>「重填」</b>则计时续走、换一句再来。提交方自己只能撤回。单人模式不设字数上限。</li>
+                <li>开局设置：正式开局前，选手与裁判都能改<b>棋盘路数 / 低频字 / 轮数 / 每手秒数 / 语料文体</b>，也能<b>重抽棋盘</b>（只换一套字）。改完全员要重新点「准备好了」——规则变了，旧的准备不算数。开局后规则锁死。</li>
+                <li>自定义字库：开局前可以<b>粘贴一段文本</b>（或选一个 .txt）当字库，棋盘会<b>优先用里面的汉字</b>，去重后不够铺满时才由系统字库补上。只认汉字，标点数字字母会忽略，繁体自动转简体。<b>点棋盘上任意一格可以单独换掉那一格的字</b>——换的字同样先从字库里取，取尽才用系统字库。留空保存就是撤下字库，回到系统字库。开局后字库锁死。</li>
+                <li>出手预览：轮到你时，输入框里打出的字会立刻在棋盘上刷成<b>你方墨色的半透明版</b>——实线内框是「新占」、虚线框是「抢夺」、白框是「己方」；落子后本手变化的格子会闪一圈白描边。</li>
+                <li>裁判：选手可以随时把<b>一位或多位观众</b>设为裁判（成员面板里点「设为裁判」，可取消）。裁判不能出手，但能<b>暂停 / 继续、撤销一步、提前结算、改开局设置与重抽棋盘</b>，也能裁决未收录句、代批选手的「撤销 / 结算」请求。裁判自己点撤销和结算<b>直接生效</b>，不用等谁同意。</li>
+              </ol>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <!-- 右：操作台 -->
+      <div class="side">
+        <div class="card">
+          <div class="pad">
+            <div class="dup">
+              <p class="sec-title">当前出手方</p>
+              <div class="teams" id="sideTeams" style="margin-bottom:12px;">
+                <div class="team tA" id="sideTeamA"><span class="swatch"></span>赤营</div>
+                <div class="team tB" id="sideTeamB"><span class="swatch"></span>青营</div>
+                <div class="team tC hidden" id="sideTeamC"><span class="swatch"></span>金营</div>
+                <div class="team tD hidden" id="sideTeamD"><span class="swatch"></span>翠营</div>
+              </div>
+            </div>
+
+            <!-- 准备条：全员到齐后各点一次「准备好了」才开始 -->
+            <div class="readybar hidden" id="readyBar">
+              <div class="rbody">
+                <div class="rtitle" id="readyTitle">全员都点「准备好了」后开局</div>
+                <div class="rpills">
+                  <span class="rpill tA" id="readyA">赤营 未准备</span>
+                  <span class="rpill tB" id="readyB">青营 未准备</span>
+                  <span class="rpill tC hidden" id="readyC">金营 未准备</span>
+                  <span class="rpill tD hidden" id="readyD">翠营 未准备</span>
+                </div>
+              </div>
+              <div class="cbtns">
+                <button id="btnInvite" title="重新打开邀请信息">邀请</button>
+                <button class="primary" id="btnReady">我准备好了</button>
+              </div>
+            </div>
+
+            <!-- 裁判提示：被选手标成裁判的人看得到自己现在能做什么 -->
+            <div class="refbar hidden" id="refBar">
+              <span class="rtag">裁判</span>
+              <span class="rtext" id="refText">你现在是裁判：可暂停 / 继续、撤销一步、提前结算、裁决未收录句，也能改开局设置。</span>
+            </div>
+
+            <!-- 开局设置：正式开始前可改盘面与规则；选手 / 裁判可改，其他人为只读 -->
+            <div class="setupbox" id="setupBox">
+              <div class="shead">
+                <span class="stag">开局设置</span>
+                <span class="shint" id="setupHint">—</span>
+              </div>
+              <div class="sgrid">
+                <label class="sf"><span>棋盘</span><span class="numstep compact"><button type="button" class="nstep-btn" data-step-for="cfgSize" data-dir="-1" tabindex="-1" aria-label="减少棋盘路数">−</button><input type="number" id="cfgSize" min="5" max="20" step="1" inputmode="numeric"><button type="button" class="nstep-btn" data-step-for="cfgSize" data-dir="1" tabindex="-1" aria-label="增加棋盘路数">+</button></span><i>路</i></label>
+                <label class="sf"><span>低频字</span><span class="numstep compact"><button type="button" class="nstep-btn" data-step-for="cfgExtra" data-dir="-1" tabindex="-1" aria-label="减少低频字数">−</button><input type="number" id="cfgExtra" min="0" max="400" step="1" inputmode="numeric"><button type="button" class="nstep-btn" data-step-for="cfgExtra" data-dir="1" tabindex="-1" aria-label="增加低频字数">+</button></span><i id="cfgExtraHint">≤ 100</i></label>
+                <label class="sf"><span>轮数</span><span class="numstep compact"><button type="button" class="nstep-btn" data-step-for="cfgRounds" data-dir="-1" tabindex="-1" aria-label="减少轮数">−</button><input type="number" id="cfgRounds" min="1" max="999" step="1" inputmode="numeric"><button type="button" class="nstep-btn" data-step-for="cfgRounds" data-dir="1" tabindex="-1" aria-label="增加轮数">+</button></span><i>轮</i></label>
+                <label class="sf"><span>每手</span><span class="numstep compact"><button type="button" class="nstep-btn" data-step-for="cfgSeconds" data-dir="-1" tabindex="-1" aria-label="减少每手秒数">−</button><input type="number" id="cfgSeconds" min="15" max="600" step="5" inputmode="numeric"><button type="button" class="nstep-btn" data-step-for="cfgSeconds" data-dir="1" tabindex="-1" aria-label="增加每手秒数">+</button></span><i>秒</i></label>
+                <label class="sf"><span>上限</span><span class="numstep compact"><button type="button" class="nstep-btn" data-step-for="cfgMaxLen" data-dir="-1" tabindex="-1" aria-label="减少字数上限">−</button><input type="number" id="cfgMaxLen" min="5" max="99" step="1" inputmode="numeric"><button type="button" class="nstep-btn" data-step-for="cfgMaxLen" data-dir="1" tabindex="-1" aria-label="增加字数上限">+</button></span><i>字</i></label>
+              </div>
+              <div class="sline">
+                <label class="chk"><input type="checkbox" id="cfgEndless"> 战至最后一刻</label>
+                <label class="chk" id="cfgLimitCoupletLab" title="开启后，诗每次至多提交同一联前后两句且不得跨联；关闭后按字数上限放行"><input type="checkbox" id="cfgLimitCouplet" checked> 诗限联句</label>
+                <label class="chk" id="cfgFreeSubmitLab" title="开启后，完全关闭判定限制（不限字数上限、不限前后联句），像单人模式一样随意提交"><input type="checkbox" id="cfgFreeSubmit"> 自由提交</label>
+                <div class="kinds" id="cfgKinds">
+                  <label><input type="checkbox" value="诗">诗</label>
+                  <label><input type="checkbox" value="词">词</label>
+                  <label><input type="checkbox" value="曲">曲</label>
+                  <label><input type="checkbox" value="赋">赋</label>
+                  <label><input type="checkbox" value="文">文</label>
+                </div>
+              </div>
+              <div class="row" style="margin-top:9px;">
+                <button class="primary" id="btnApplyCfg">应用设置</button>
+                <button id="btnRedraw" title="重抽一套棋盘（尺寸与低频字不变）">重抽棋盘</button>
+                <span class="sdirty" id="cfgDirty"></span>
+              </div>
+              <!-- 自定义字库：只影响「用哪些字铺盘」，与上面那几项规则互不干涉 -->
+              <div class="poolline">
+                <button type="button" id="btnOpenPool" title="粘贴一段文本，棋盘优先用里面的字，不够才由系统字库补">自定义字库</button>
+                <span class="poolstat" id="poolStat">系统字库</span>
+                <button type="button" id="btnClearPool" class="hidden" title="撤下自定义字库，棋盘回到系统字库">撤下</button>
+              </div>
+            </div>
+
+
+            <!-- 观众条：场上有空位时可以直接坐下 -->
+            <div class="watchbox hidden" id="watchBox">
+              <div class="whead"><span class="wtag" id="watchTag">观战</span><span class="whint" id="watchHint">场上有空位时可以坐下参战</span></div>
+              <div class="row" style="margin-top:8px;">
+                <button id="btnSeatA">坐到赤营</button>
+                <button id="btnSeatB">坐到青营</button>
+                <button id="btnSeatC" class="hidden">坐到金营</button>
+                <button id="btnSeatD" class="hidden">坐到翠营</button>
+              </div>
+            </div>
+
+            <p class="sec-title" id="poemTitle">录入诗句</p>
+            <textarea id="poem" maxlength="200" rows="2" placeholder="在此输入诗句，如：床前明月光（回车提交）" readonly
+                      autocomplete="off" spellcheck="false"></textarea>
+            <div class="pvhint hidden" id="pvHint"></div>
+            <div class="timer">
+              <div class="clock" id="clock">120</div>
+              <div class="turnhint" id="turnWho">等待对手加入</div>
+            </div>
+            <div class="pausebar hidden" id="pauseBar">
+              <div class="cbody" id="pauseText">—</div>
+              <div class="cbtns"><button class="primary" id="btnResume">继续对局</button></div>
+            </div>
+            <div class="row" id="playRow" style="margin-top:12px;">
+              <button id="btnSubmit" class="primary" style="flex:1 1 auto;" disabled>提交飞花（回车）</button>
+              <button id="btnPass" disabled>放弃本回合</button>
+            </div>
+            <div class="msg" id="verdict"></div>
+
+            <!-- 待裁决：诗未收录时计时暂停，由对手决定有效 / 重填 -->
+            <div class="disputebar hidden" id="disputeBar">
+              <div class="dbody" id="disputeText">—</div>
+              <div class="cbtns" id="disputeBtns">
+                <button class="primary" id="btnValid">判为有效</button>
+                <button id="btnRetry">要求重填</button>
+                <button id="btnWithdraw" class="hidden">撤回提交</button>
+              </div>
+            </div>
+
+            <div class="consentbar hidden" id="consentBar">
+              <div class="cbody" id="consentText">—</div>
+              <div class="cbtns" id="consentBtns">
+                <button class="primary" id="btnAgree">同意</button>
+                <button id="btnDeny">拒绝</button>
+              </div>
+            </div>
+
+            <div class="row tools" style="margin-top:10px;">
+              <button id="btnUndo" title="撤回上一步" disabled>撤销一步</button>
+              <button id="btnFinish" title="提前结算" disabled>提前结算</button>
+              <button id="btnPause" title="暂停 / 继续（任意一方都能操作）" disabled>暂停</button>
+              <button id="btnStand" title="下场当观众，席位留给别人" class="hidden">下场观战</button>
+            </div>
+            <div class="row tools" style="margin-top:8px;">
+              <button id="btnExportProgress" title="将当前棋盘与对局进度备份为本地文件，以防服务器重启或崩溃">导出进度</button>
+              <button id="btnShot" title="生成一张战报图片：含当前棋盘与飞花记录">导出截图</button>
+              <button id="btnGif" title="生成逐手回放的动图">导出 GIF</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="pad" style="padding-bottom:6px;">
+            <p class="sec-title" style="margin-bottom:2px;">飞花记录</p>
+          </div>
+          <div class="pad" style="padding-top:6px;">
+            <ul class="loglist" id="logList"></ul>
+            <div class="empty" id="logEmpty">尚未开始，记录会显示在这里。</div>
+          </div>
+        </div>
+
+        <!-- 房间：谁在里面（可改名 / 移出离线者）+ 完整事件时间线 -->
+        <div class="card">
+          <div class="pad" style="padding-bottom:8px;">
+            <div class="sechead">
+              <p class="sec-title" style="margin:0;">房间</p>
+              <div class="tabs">
+                <button class="tab on" id="tabMembers" data-tab="members">成员 <b id="memCount">0</b></button>
+                <button class="tab" id="tabEvents" data-tab="events">事件 <b id="evCount">0</b></button>
+              </div>
+            </div>
+          </div>
+          <div class="pad" style="padding-top:2px;">
+            <ul class="memlist" id="memList"></ul>
+            <ol class="evlist hidden" id="evList"></ol>
+            <div class="empty hidden" id="evEmpty">还没有事件。</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+</div>
+
+<!-- 等待对手 -->
+<div class="overlay hidden" id="waitOverlay">
+  <div class="modal" style="max-width:460px;text-align:center;">
+    <div class="winner">房间已开好</div>
+    <p>把房间号发给对手，他在首页输入就能进来。<br>两人都点「准备好了」才开局。</p>
+    <div class="bigcode" id="waitCode">----</div>
+    <div class="copyrow">
+      <input type="text" id="shareUrl" readonly>
+      <button id="btnCopyLink">复制链接</button>
+    </div>
+    <div class="copyrow" style="margin-top:10px;">
+      <button id="btnWaitClose" style="flex:1">先去看看棋盘</button>
+    </div>
+  </div>
+</div>
+
+<!-- 结算 -->
+<div class="overlay hidden" id="endOverlay">
+  <div class="modal" style="text-align:left;">
+    <div class="winner" id="endTitle">对战结束</div>
+    <div class="winname" id="endWinner">—</div>
+    <div class="final" id="endFinal">
+      <div class="fbox" id="boxEndA"><div class="fv" id="endA" style="color:var(--ink-a)">0</div><div class="fk">赤营格子</div></div>
+      <div class="fbox" id="boxEndB"><div class="fv" id="endB" style="color:var(--ink-b)">0</div><div class="fk">青营格子</div></div>
+      <div class="fbox hidden" id="boxEndC"><div class="fv" id="endC" style="color:var(--ink-c)">0</div><div class="fk">金营格子</div></div>
+      <div class="fbox hidden" id="boxEndD"><div class="fv" id="endD" style="color:var(--ink-d)">0</div><div class="fk">翠营格子</div></div>
+      <div class="fbox" id="boxEndN"><div class="fv" id="endN" style="color:var(--muted)">0</div><div class="fk">空白格</div></div>
+    </div>
+    <p id="endReason" style="margin-bottom:0;"></p>
+    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
+      <button id="btnEndBackup" title="把这一局的完整进度备份为本地文件">导出进度</button>
+      <button id="btnEndShot" title="把这一局的棋盘与飞花记录导成图片">导出截图</button>
+      <button id="btnEndGif" title="把这一局逐手回放导成动图">导出 GIF</button>
+      <button id="btnEndClose" style="flex:1">看看棋盘</button>
+      <button class="primary" id="btnRematch" style="flex:1">再来一局</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="fbOverlay">
+  <div class="modal" style="text-align:left;max-width:440px;">
+    <h2 style="margin-bottom:14px;">向开发者反馈</h2>
+    <textarea id="fbText" maxlength="1000" rows="5"
+      placeholder="正文"
+      style="width:100%;resize:vertical;min-height:110px;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;"></textarea>
+    <input type="text" id="fbContact" maxlength="80" placeholder="联系方式（可留空）"
+      style="width:100%;margin-top:10px;font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;">
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button id="fbCancel" style="flex:1">取消</button>
+      <button class="primary" id="fbSend" style="flex:1">发送</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- 2026-10-24：断线 / 重启遮罩（#netMask）已按用户要求整体移除，见 app.js 里的说明。 -->
+
+<!-- 导出预览（截图 / GIF 共用） -->
+<div class="overlay" id="shotOverlay">
+  <div class="modal">
+    <div class="winner" id="shotKindTitle">导出截图</div>
+    <div class="winname" id="shotTitle" style="font-size:19px;letter-spacing:0;margin-bottom:2px;">—</div>
+    <div class="shotmeta" id="shotMeta">—</div>
+    <div class="shotbox" id="shotBox"><img id="shotImg" alt="飞花斯普拉遁对战截图"></div>
+    <p class="shotnote" id="shotNote">图片已生成，可直接查看；需要文件请点下方「下载 PNG」。</p>
+    <div class="row" style="margin-top:12px;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:8px;">
+      <label style="margin-right:auto;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:13px;user-select:none;color:var(--text);">
+        <input type="checkbox" id="chkShotNicks" checked style="cursor:pointer;width:15px;height:15px;accent-color:var(--ink-a);">包含选手昵称
+      </label>
+      <button id="btnShotZoom" title="在「适应窗口」与「实际大小（1:1，可滚动）」之间切换 —— 只看显示尺寸，下载出来的仍是原分辨率">实际大小</button>
+      <button id="btnShotSave">下载 PNG</button>
+      <button id="btnShotClose" class="primary">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 导出本地进度弹窗 -->
+<div class="overlay hidden" id="backupOverlay">
+  <div class="modal" style="text-align:left;max-width:480px;">
+    <div class="winner">备份对局</div>
+    <div class="winname" id="backupTitle" style="font-size:20px;margin:2px 0 10px;">导出进度到本地</div>
+    <p>将当前盘面与完整飞花记录备份至本地。服务器重启或崩溃后，凭此文件或代码可随时一键恢复现场并继续对战。</p>
+    <div class="copyrow" style="margin-top:14px;gap:8px;">
+      <button class="primary" id="btnDownloadBackup" style="flex:1.2;">下载存档文件 (.json)</button>
+      <button id="btnCopyBackupCode" style="flex:1;">复制存档代码</button>
+    </div>
+    <textarea id="backupCodeArea" class="backup-code-box" rows="4" readonly placeholder="正在生成备份数据..." title="点击可全选"></textarea>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+      <button id="btnCloseBackup" style="min-width:80px;">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 导入本地进度弹窗 -->
+<div class="overlay hidden" id="importOverlay">
+  <div class="modal" style="text-align:left;max-width:500px;">
+    <div class="winner">恢复对局</div>
+    <div class="winname" style="font-size:20px;margin:2px 0 10px;">导入本地进度</div>
+    <p>读取本地导出的 <code>.json</code> 存档文件或粘贴存档代码。恢复后对局将自动处于<b>暂停保护</b>状态，点「继续对局」即可开表。</p>
+    
+    <div class="backup-file-picker">
+      <input type="file" id="importFileInput" accept=".json,application/json,text/plain" style="display:none;">
+      <button type="button" id="btnSelectImportFile">选择本地 .json 存档</button>
+      <span class="filename" id="importFileName">未选择文件</span>
+    </div>
+
+    <textarea id="importCodeInput" class="backup-code-box" rows="5" placeholder="或在此直接粘贴存档 JSON 代码..."></textarea>
+
+    <div class="formrow" style="margin-top:10px;padding:8px 0;">
+      <label>您的昵称 <span class="hint">匹配原局席位时自动坐回</span></label>
+      <input type="text" id="importNick" maxlength="12" placeholder="恢复者" style="width:140px;">
+    </div>
+    <div class="formrow" style="border-bottom:0;padding:6px 0 0;">
+      <label></label>
+      <label class="chk" title="若原房号目前未被占用，优先使用原房号，方便其他选手继续用原链接进入">
+        <input type="checkbox" id="importKeepRoomId" checked> 尽量保留原房间号
+      </label>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button id="btnCancelImport" style="flex:1;">取消</button>
+      <button class="primary" id="btnConfirmImport" style="flex:1.2;">恢复对局</button>
+    </div>
+  </div>
+</div>
+
+<!-- 自定义字库弹窗 -->
+<div class="overlay hidden" id="askOverlay">
+  <div class="modal" style="text-align:left;max-width:430px;">
+    <div class="winner" id="askEyebrow">提示</div>
+    <div class="winname" id="askTitle" style="font-size:19px;letter-spacing:.5px;margin:2px 0 10px;">确认</div>
+    <div class="askbody" id="askBody"></div>
+    <div class="askacts">
+      <button id="askCancel" type="button">取消</button>
+      <button class="primary" id="askOk" type="button">确定</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="poolOverlay">
+  <div class="modal" style="text-align:left;max-width:520px;">
+    <div class="winner">开局设置</div>
+    <div class="winname" style="font-size:20px;margin:2px 0 10px;">自定义字库</div>
+    <p>粘贴一段文本（诗句、文章，或干脆一堆字）。棋盘会<b>优先用这段文本里的汉字</b>，
+      去重后不够铺满时，才由系统字库补上。只认汉字，标点、数字、字母会被忽略；繁体自动转简体。</p>
+
+    <div class="pool-pick">
+      <input type="file" id="poolFileInput" accept=".txt,.md,text/plain" style="display:none;">
+      <button type="button" id="btnPickPoolFile">选择文本文件</button>
+      <span class="pool-fname" id="poolFileName">未选择文件</span>
+    </div>
+
+    <textarea id="poolText" class="pool-box" rows="6" placeholder="在此粘贴文本，例如：春江潮水连海平，海上明月共潮生……"></textarea>
+    <div class="poolmeta" id="poolMeta">—</div>
+
+    <div style="display:flex;gap:10px;margin-top:14px;">
+      <button id="btnCancelPool" style="flex:1;">取消</button>
+      <button class="primary" id="btnApplyPool" style="flex:1.2;">应用字库</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script src="export.js"></script>
+</body>
+</html>
