@@ -187,6 +187,62 @@
   .poolmeta{font-size:12px;color:var(--muted);margin-top:8px;min-height:16px;line-height:1.5;}
   .poolmeta b{color:var(--text);font-variant-numeric:tabular-nums;}
   .poolmeta .bad{color:#B03A2E;}
+    /* ---------- 语料数据库查验弹窗样式 ---------- */
+  #corpusOverlay .modal{
+    max-width:min(780px,94vw);height:86vh;max-height:86vh;
+    display:flex;flex-direction:column;padding:20px 22px 16px;
+  }
+  .corpus-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;}
+  .corpus-title{font-size:18px;font-weight:700;margin:0 0 4px;color:var(--text);display:flex;align-items:center;gap:8px;}
+  .corpus-subtags{display:flex;flex-wrap:wrap;gap:6px;font-size:11.5px;color:var(--muted);}
+  .corpus-subtags span{background:var(--soft);border:1px solid var(--line);padding:1px 7px;border-radius:999px;}
+  .corpus-tabs{display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid var(--line);padding-bottom:8px;}
+  .corpus-tab{
+    padding:6px 14px;border-radius:8px;border:1px solid transparent;background:transparent;
+    font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .15s;
+  }
+  .corpus-tab:hover{background:var(--soft);color:var(--text);}
+  .corpus-tab.active{background:#EEF4FF;color:var(--ink-b);border-color:#C9DBF5;}
+  .corpus-search-bar{display:flex;gap:8px;margin-bottom:8px;}
+  .corpus-search-bar input{
+    flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);border-radius:10px;
+    font:inherit;font-size:14px;background:#fff;color:var(--text);
+  }
+  .corpus-search-bar input:focus{outline:none;border-color:#9DB6D8;box-shadow:0 0 0 3px rgba(120,160,210,.16);}
+  .corpus-chips{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--faint);margin-bottom:12px;}
+  .corpus-chip{
+    padding:2px 8px;border-radius:6px;background:var(--soft);border:1px solid var(--line);
+    color:var(--muted);cursor:pointer;text-decoration:none;font-size:12px;
+  }
+  .corpus-chip:hover{background:#E6EEF8;color:var(--text);}
+  .corpus-scroll{
+    flex:1 1 0;overflow-y:auto;border:1px solid var(--line);border-radius:12px;
+    background:#FAFAFB;padding:12px;display:flex;flex-direction:column;gap:10px;
+  }
+  .corpus-card{
+    background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+    box-shadow:0 1px 3px rgba(0,0,0,.03);
+  }
+  .corpus-card-title{font-size:15px;font-weight:700;color:var(--text);margin-bottom:4px;display:flex;justify-content:space-between;align-items:baseline;}
+  .corpus-card-meta{font-size:12px;color:var(--muted);margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap;}
+  .corpus-badge{padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;}
+  .badge-shi{background:#E8F4FD;color:#1B65A3;}
+  .badge-ci{background:#FBF0E4;color:#B45309;}
+  .badge-qu{background:#F3E8FF;color:#7E22CE;}
+  .badge-fu{background:#ECFDF5;color:#047857;}
+  .badge-wen{background:#F1F5F9;color:#475569;}
+  .corpus-card-text{font-size:13.5px;line-height:1.75;color:var(--text);white-space:pre-wrap;background:#F8F9FA;padding:8px 10px;border-radius:6px;}
+  .corpus-clauses{display:flex;flex-wrap:wrap;gap:4px 6px;margin-top:8px;}
+  .corpus-clause-tag{font-size:12px;padding:1px 6px;background:#fff;border:1px solid var(--line);border-radius:4px;color:var(--muted);}
+  .judge-res-box{padding:12px 14px;border-radius:8px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .judge-res-box.pass{background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46;}
+  .judge-res-box.fail{background:#FEF2F2;border:1px solid #FECACA;color:#991B1B;}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px;}
+  .stat-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-align:center;}
+  .stat-val{font-size:20px;font-weight:800;color:var(--text);margin-bottom:2px;}
+  .stat-lbl{font-size:11.5px;color:var(--muted);}
+  .corpus-foot{margin-top:10px;font-size:12px;color:var(--faint);display:flex;align-items:center;justify-content:space-between;}
+
   /* 字库弹窗自带一套样式，不借用导出/导入进度那套（两边是独立功能） */
   .pool-pick{display:flex;align-items:center;gap:10px;margin-top:12px;}
   .pool-pick .pool-fname{font-size:12px;color:var(--faint);min-width:0;
@@ -990,6 +1046,7 @@
         </div>
         <div class="lobby-import-bar" style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);text-align:center;">
           <button type="button" class="lite" id="btnOpenImport" style="padding:6px 14px;font-size:12.5px;border-radius:999px;" title="从本地 JSON 备份文件或存档代码恢复对局">导入本地进度恢复对局</button>
+          <button type="button" class="lite" id="btnOpenCorpus" style="padding:6px 14px;font-size:12.5px;border-radius:999px;color:var(--ink-b);font-weight:600;" title="查验数据库收录、诗篇分句与落点">📖 语料查验</button>
         </div>
       </div>
     </div>
@@ -1000,6 +1057,7 @@
         <div class="sechead">
           <p class="sec-title">当前房间</p>
           <span style="display:flex;align-items:center;gap:8px;">
+            <button class="lite" id="btnOpenCorpus2" title="查验数据库收录、诗篇分句与落点" type="button" style="font-size:12px;padding:3px 9px;">📖 语料查验</button>
             <button class="fb-open lite" id="btnFbLobby" title="向开发者反馈">反馈</button>
             <span class="cnt" id="roomCount">—</span>
           </span>
@@ -1405,6 +1463,55 @@
     <div style="display:flex;gap:10px;margin-top:14px;">
       <button id="btnCancelPool" style="flex:1;">取消</button>
       <button class="primary" id="btnApplyPool" style="flex:1.2;">应用字库</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 语料数据库查验弹窗 ============ -->
+<div class="overlay hidden" id="corpusOverlay">
+  <div class="modal">
+    <div class="corpus-head">
+      <div>
+        <div class="corpus-title">📖 语料数据库查验</div>
+        <div class="corpus-subtags" id="corpusHeadTags">
+          <span>总篇数: 40.8万</span>
+          <span>总小句: 423.6万</span>
+          <span>诗 / 词 / 曲 / 赋 / 文</span>
+        </div>
+      </div>
+      <button class="notice-close" id="btnCloseCorpus" type="button" aria-label="关闭" style="position:static;transform:none;">×</button>
+    </div>
+
+    <div class="corpus-tabs">
+      <button class="corpus-tab active" id="tabPoem" type="button">查诗篇（搜标题/作者）</button>
+      <button class="corpus-tab" id="tabProbe" type="button">查诗句（判定与全库落点）</button>
+      <button class="corpus-tab" id="tabStats" type="button">全库统计与概览</button>
+    </div>
+
+    <div class="corpus-search-bar" id="corpusSearchBar">
+      <input type="text" id="corpusQuery" placeholder="输入诗词标题或作者（如：静女、赤壁怀古、李白、苏轼）" maxlength="60">
+      <button class="primary" id="btnCorpusDoSearch" type="button" style="padding:0 18px;">搜索</button>
+    </div>
+
+    <div class="corpus-chips" id="corpusChips">
+      <span>快捷示例：</span>
+      <a href="javascript:void(0)" class="corpus-chip" data-val="静女">静女</a>
+      <a href="javascript:void(0)" class="corpus-chip" data-val="赤壁怀古">赤壁怀古</a>
+      <a href="javascript:void(0)" class="corpus-chip" data-val="李白">李白</a>
+      <a href="javascript:void(0)" class="corpus-chip" data-val="苏轼">苏轼</a>
+      <a href="javascript:void(0)" class="corpus-chip" data-val="静女其姝">静女其姝</a>
+      <a href="javascript:void(0)" class="corpus-chip" data-val="乱我心者今日之日多烦忧">乱我心者</a>
+    </div>
+
+    <div class="corpus-scroll" id="corpusScrollBox">
+      <div style="text-align:center;color:var(--muted);padding:40px 10px;font-size:13.5px;">
+        在上方输入标题、作者或诗句，即可即时查验数据库收录、判定结果与切句明细。
+      </div>
+    </div>
+
+    <div class="corpus-foot">
+      <span>💡 发现诗词错漏或需要补录？可在首页点「反馈」直接提交。</span>
+      <span style="color:var(--muted);">毫秒级实时检索</span>
     </div>
   </div>
 </div>

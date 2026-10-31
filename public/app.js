@@ -607,6 +607,40 @@ function bindLobby() {
   });
 
   /* 导入本地进度恢复对局 */
+    if ($('btnOpenCorpus')) $('btnOpenCorpus').addEventListener('click', () => openCorpusModal());
+  if ($('btnOpenCorpus2')) $('btnOpenCorpus2').addEventListener('click', () => openCorpusModal());
+  if ($('btnCloseCorpus')) $('btnCloseCorpus').addEventListener('click', closeCorpusModal);
+  if ($('corpusOverlay')) {
+    $('corpusOverlay').addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'corpusOverlay') closeCorpusModal();
+    });
+  }
+  if ($('tabPoem')) $('tabPoem').addEventListener('click', () => switchCorpusTab('poem'));
+  if ($('tabProbe')) $('tabProbe').addEventListener('click', () => switchCorpusTab('probe'));
+  if ($('tabStats')) $('tabStats').addEventListener('click', () => switchCorpusTab('stats'));
+  if ($('btnCorpusDoSearch')) $('btnCorpusDoSearch').addEventListener('click', doCorpusSearch);
+  if ($('corpusQuery')) {
+    $('corpusQuery').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); doCorpusSearch(); }
+    });
+  }
+  if ($('corpusChips')) {
+    $('corpusChips').addEventListener('click', (e) => {
+      const chip = e.target.closest('.corpus-chip');
+      if (chip && chip.dataset.val) {
+        $('corpusQuery').value = chip.dataset.val;
+        doCorpusSearch();
+      }
+    });
+  }
+  // 检测 URL 参数是否需要直接拉起语料查验窗口
+  try {
+    const sp = new URLSearchParams(location.search);
+    if (sp.get('corpus') === '1' || sp.get('view') === 'corpus') {
+      setTimeout(() => openCorpusModal(sp.get('q') || ''), 200);
+    }
+  } catch (_) {}
+  
   $('btnOpenImport').addEventListener('click', openImportModal);
   $('btnCancelImport').addEventListener('click', closeImportModal);
   $('btnSelectImportFile').addEventListener('click', () => { $('importFileInput').click(); });
@@ -2911,6 +2945,289 @@ function buildLocalBackupFromState(st) {
     paused: st.paused ? { by: st.paused.by, left: st.paused.left, why: st.paused.why } : null,
     events: Array.isArray(st.events) ? st.events.slice(-50) : [],
   };
+}
+
+/* ============ 语料数据库查验模块 ============ */
+let corpusActiveTab = 'poem';
+let corpusSummaryData = null;
+
+function openCorpusModal(initialQuery = '', initialTab = 'poem') {
+  const overlay = $('corpusOverlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+  switchCorpusTab(initialTab);
+  if (initialQuery) {
+    $('corpusQuery').value = initialQuery;
+    doCorpusSearch();
+  }
+  loadCorpusSummary();
+}
+
+function closeCorpusModal() {
+  const overlay = $('corpusOverlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+async function loadCorpusSummary() {
+  if (corpusSummaryData) {
+    renderCorpusHeadTags(corpusSummaryData);
+    return;
+  }
+  try {
+    const res = await fetch('/api/corpus/summary');
+    const json = await res.json();
+    if (json && json.ok && json.data) {
+      corpusSummaryData = json.data;
+      renderCorpusHeadTags(corpusSummaryData);
+      if (corpusActiveTab === 'stats') renderCorpusStats(corpusSummaryData);
+    }
+  } catch (_) {}
+}
+
+function renderCorpusHeadTags(d) {
+  const box = $('corpusHeadTags');
+  if (!box || !d) return;
+  const pWan = (d.poems / 10000).toFixed(1);
+  const cWan = (d.lines / 10000).toFixed(1);
+  box.innerHTML = '<span>总篇数: ' + pWan + '万 (' + d.poems.toLocaleString() + ')</span>' +
+    '<span>总小句: ' + cWan + '万 (' + d.lines.toLocaleString() + ')</span>' +
+    '<span>异文名篇: ' + (d.variants || 0) + '</span>';
+}
+
+function switchCorpusTab(tab) {
+  corpusActiveTab = tab;
+  if ($('tabPoem')) $('tabPoem').classList.toggle('active', tab === 'poem');
+  if ($('tabProbe')) $('tabProbe').classList.toggle('active', tab === 'probe');
+  if ($('tabStats')) $('tabStats').classList.toggle('active', tab === 'stats');
+
+  const searchBar = $('corpusSearchBar');
+  const chips = $('corpusChips');
+  const scrollBox = $('corpusScrollBox');
+
+  if (tab === 'stats') {
+    if (searchBar) searchBar.style.display = 'none';
+    if (chips) chips.style.display = 'none';
+    if (corpusSummaryData) {
+      renderCorpusStats(corpusSummaryData);
+    } else {
+      scrollBox.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">正在加载全库统计...</div>';
+      loadCorpusSummary();
+    }
+    return;
+  }
+
+  if (searchBar) searchBar.style.display = 'flex';
+  if (chips) chips.style.display = 'flex';
+
+  if (tab === 'poem') {
+    if ($('corpusQuery')) $('corpusQuery').placeholder = '输入诗词标题或作者（如：静女、赤壁怀古、李白、苏轼）';
+    if (chips) {
+      chips.innerHTML = '<span>快捷示例：</span>' +
+        '<a href="javascript:void(0)" class="corpus-chip" data-val="静女">静女</a>' +
+        '<a href="javascript:void(0)" class="corpus-chip" data-val="赤壁怀古">赤壁怀古</a>' +
+        '<a href="javascript:void(0)" class="corpus-chip" data-val="李白">李白</a>' +
+        '<a href="javascript:void(0)" class="corpus-chip" data-val="苏轼">苏轼</a>' +
+        '<a href="javascript:void(0)" class="corpus-chip" data-val="李贺">李贺</a>';
+    }
+  } else if (tab === 'probe') {
+    if ($('corpusQuery')) $('corpusQuery').placeholder = '输入完整或连续诗句测试判定与落点（如：静女其姝、乱我心者今日之日多烦忧）';
+    if (chips) {
+      chips.innerHTML = '<span>快捷示例：</span>' +
+        '<a href="javascript:void(0)" class="corpus-chip" data-val="静女其姝">静女其姝</a>' +
+        '<a href="javascript:void(0)" class="corpus-chip" data-val="乱我心者今日之日多烦忧">乱我心者今日之日多烦忧</a>' +
+        '<a href="javascript:void(0)" class="corpus-chip" data-val="床前看月光">床前看月光(异文)</a>' +
+        '<a href="javascript:void(0)" class="corpus-chip" data-val="醉翁之意不在酒">醉翁之意不在酒</a>';
+    }
+  }
+}
+
+async function doCorpusSearch() {
+  const q = $('corpusQuery').value.trim();
+  const box = $('corpusScrollBox');
+  if (!q) {
+    toast('请输入要查验的标题、作者或诗句');
+    $('corpusQuery').focus();
+    return;
+  }
+
+  box.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">正在全库毫秒级检索中...</div>';
+
+  if (corpusActiveTab === 'poem') {
+    try {
+      const res = await fetch('/api/corpus/search?q=' + encodeURIComponent(q) + '&limit=30');
+      const r = await res.json();
+      if (!r || !r.ok || !r.data) {
+        box.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">检索失败，请稍后重试</div>';
+        return;
+      }
+      renderPoemSearchResults(r.data, q);
+    } catch (e) {
+      box.innerHTML = '<div style="text-align:center;padding:30px;color:#B03A2E;">网络请求异常: ' + escapeHtml(e.message) + '</div>';
+    }
+  } else if (corpusActiveTab === 'probe') {
+    try {
+      const res = await fetch('/api/corpus/probe?q=' + encodeURIComponent(q) + '&limit=15');
+      const r = await res.json();
+      if (!r || !r.ok || !r.data) {
+        box.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">检索失败，请稍后重试</div>';
+        return;
+      }
+      renderProbeSearchResults(r.data, q);
+    } catch (e) {
+      box.innerHTML = '<div style="text-align:center;padding:30px;color:#B03A2E;">网络请求异常: ' + escapeHtml(e.message) + '</div>';
+    }
+  }
+}
+
+function renderPoemSearchResults(data, q) {
+  const box = $('corpusScrollBox');
+  if (!data.list || !data.list.length) {
+    box.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--muted);">全库 40.8万篇 中未找到标题或作者包含「' + escapeHtml(q) + '」的篇目。<br><span style="font-size:12px;color:var(--faint);margin-top:6px;display:inline-block;">提示：如果是生僻词或散文，可在首页勾选「文」文体或提交反馈申请补录。</span></div>';
+    return;
+  }
+
+  let html = '<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">共找到 <b>' + data.total + '</b> 篇匹配（当前展示前 ' + data.list.length + ' 条）：</div>';
+  for (const item of data.list) {
+    const kindClass = item.kind === '诗' ? 'badge-shi' : (item.kind === '词' ? 'badge-ci' : (item.kind === '曲' ? 'badge-qu' : (item.kind === '赋' ? 'badge-fu' : 'badge-wen')));
+    const isVar = item.title && item.title.includes('(异文版)');
+    html += '<div class="corpus-card">' +
+      '<div class="corpus-card-title">' +
+        '<span>' + escapeHtml(item.title) + (isVar ? ' <span style="color:#B45309;font-size:11px;background:#FDEBC8;padding:1px 5px;border-radius:4px;">版本异文</span>' : '') + '</span>' +
+        '<span style="font-size:12px;color:var(--faint);font-weight:normal;">出处权重: ' + item.prio + '</span>' +
+      '</div>' +
+      '<div class="corpus-card-meta">' +
+        '<span>作者：<b>' + escapeHtml(item.author || '佚名') + '</b></span>' +
+        '<span>朝代：' + escapeHtml(item.dynasty || '未知') + '</span>' +
+        '<span>文体：<span class="corpus-badge ' + kindClass + '">' + escapeHtml(item.kind) + '</span></span>' +
+        '<span>共 ' + item.count + ' 小句</span>' +
+      '</div>' +
+      '<div class="corpus-card-text">' + escapeHtml(item.text) + '</div>' +
+      '<details style="margin-top:8px;">' +
+        '<summary style="font-size:12px;color:var(--ink-b);cursor:pointer;padding:2px 0;">查看 ' + item.clauses.length + ' 句切分明细</summary>' +
+        '<div class="corpus-clauses">' +
+          item.clauses.map(c => '<span class="corpus-clause-tag">' + escapeHtml(c) + '</span>').join('') +
+        '</div>' +
+      '</details>' +
+    '</div>';
+  }
+  box.innerHTML = html;
+}
+
+function renderProbeSearchResults(data, q) {
+  const box = $('corpusScrollBox');
+  const jd = data.judge;
+  let html = '';
+
+  if (!jd) {
+    box.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">无判定结果</div>';
+    return;
+  }
+
+  const isPass = jd.ok;
+  const statusCls = isPass ? 'pass' : 'fail';
+  const viaName = jd.code === 'exact' ? '整句精确命中' : (jd.code === 'couplet' ? '联句(上下句结合)' : (jd.code === 'phrase' ? '名句连续片段' : (jd.code === 'variant' ? '异文对兼容' : '未收录')));
+
+  html += '<div class="judge-res-box ' + statusCls + '">' +
+    '<div>' +
+      '<div style="font-weight:700;font-size:15px;margin-bottom:2px;">' +
+        (isPass ? '✅ 官方判定：通过' : '❌ 官方判定：未收录') +
+        '<span style="font-size:12px;font-weight:normal;margin-left:8px;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,.06);">' + viaName + '</span>' +
+      '</div>' +
+      '<div style="font-size:12.5px;opacity:.9;">' +
+        (isPass ? '判定出处：<b>《' + escapeHtml(jd.source.title) + '》</b> ' + escapeHtml(jd.source.author) + ' · ' + escapeHtml(jd.source.dynasty) + ' · ' + escapeHtml(jd.source.kind) : (escapeHtml(jd.reason) || '该句未收录于当前题库')) +
+      '</div>' +
+    '</div>' +
+    '<div style="text-align:right;font-size:12px;opacity:.8;">' +
+      '规范化字: ' + escapeHtml(jd.norm || '') +
+    '</div>' +
+  '</div>';
+
+  if (data.hits && data.hits.length) {
+    html += '<div style="font-size:12.5px;color:var(--muted);margin:10px 0 6px;">全库落点分析（共检索到 <b>' + data.hits.length + '</b> 首诗词包含该小句）：</div>';
+    for (const h of data.hits) {
+      const isOfficial = jd.source && jd.source.title === h.title && jd.source.author === h.author;
+      html += '<div class="corpus-card" style="' + (isOfficial ? 'border-color:#A7F3D0;background:#FBFDFB;' : '') + '">' +
+        '<div class="corpus-card-title">' +
+          '<span>' +
+            (isOfficial ? '<span style="color:#059669;font-weight:700;margin-right:4px;">[当前出处]</span>' : '') +
+            '《' + escapeHtml(h.title) + '》' +
+          '</span>' +
+          '<span style="font-size:12px;color:var(--muted);">出处权重打分: <b>' + h.prio + '</b> (' + (h.prio <= 100 ? '极优先' : (h.prio <= 500 ? '较早朝代' : '转引/较晚')) + ')</span>' +
+        '</div>' +
+        '<div class="corpus-card-meta">' +
+          '<span>作者：' + escapeHtml(h.author) + '</span>' +
+          '<span>朝代：' + escapeHtml(h.dynasty) + '</span>' +
+          '<span>文体：' + escapeHtml(h.kind) + '</span>' +
+          '<span>命中句式：' + (h.whole ? '整句吻合' : '小句局部') + '</span>' +
+        '</div>' +
+        '<div class="corpus-card-text">' + escapeHtml(h.text) + '</div>' +
+      '</div>';
+    }
+  } else {
+    html += '<div style="text-align:center;padding:24px;color:var(--muted);font-size:13px;">全库 328 万句中未检索到与「' + escapeHtml(q) + '」连续重合的诗文。</div>';
+  }
+
+  box.innerHTML = html;
+}
+
+function renderCorpusStats(d) {
+  const box = $('corpusScrollBox');
+  if (!d) return;
+
+  const kindItems = Object.entries(d.kinds || {}).sort((a,b) => b[1] - a[1]);
+  const dynastyItems = Object.entries(d.dynasties || {}).sort((a,b) => b[1] - a[1]);
+
+  let html = '<div class="stat-grid">' +
+    '<div class="stat-card">' +
+      '<div class="stat-val" style="color:#1B65A3;">' + (d.poems/10000).toFixed(1) + '<span style="font-size:13px;">万</span></div>' +
+      '<div class="stat-lbl">收录总篇数 (' + d.poems.toLocaleString() + ')</div>' +
+    '</div>' +
+    '<div class="stat-card">' +
+      '<div class="stat-val" style="color:#047857;">' + (d.lines/10000).toFixed(1) + '<span style="font-size:13px;">万</span></div>' +
+      '<div class="stat-lbl">独立小句 (' + d.lines.toLocaleString() + ')</div>' +
+    '</div>' +
+    '<div class="stat-card">' +
+      '<div class="stat-val" style="color:#B45309;">' + (d.chars/1000000).toFixed(1) + '<span style="font-size:13px;">M</span></div>' +
+      '<div class="stat-lbl">语料汉字字数</div>' +
+    '</div>' +
+    '<div class="stat-card">' +
+      '<div class="stat-val" style="color:#7E22CE;">' + (d.variants || 0) + '</div>' +
+      '<div class="stat-lbl">版本异文名篇</div>' +
+    '</div>' +
+  '</div>';
+
+  html += '<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;">' +
+    '<div style="font-weight:700;font-size:14px;margin-bottom:8px;">文体分布占比</div>' +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
+      kindItems.map(([k, cnt]) =>
+        '<div style="flex:1;min-width:90px;background:#F8FAFC;border:1px solid var(--line);border-radius:8px;padding:8px 10px;text-align:center;">' +
+          '<div style="font-weight:700;font-size:16px;">' + cnt.toLocaleString() + '</div>' +
+          '<div style="font-size:12px;color:var(--muted);">' + k + ' (' + ((cnt/d.poems)*100).toFixed(1) + '%)</div>' +
+        '</div>'
+      ).join('') +
+    '</div>' +
+  '</div>';
+
+  html += '<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;">' +
+    '<div style="font-weight:700;font-size:14px;margin-bottom:8px;">主要朝代分布</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;">' +
+      dynastyItems.slice(0, 12).map(([dy, cnt]) =>
+        '<div style="font-size:12.5px;padding:4px 8px;background:#FAFAFB;border-radius:6px;display:flex;justify-content:space-between;">' +
+          '<span style="color:var(--muted);">' + dy + '</span>' +
+          '<b>' + cnt.toLocaleString() + '</b>' +
+        '</div>'
+      ).join('') +
+    '</div>' +
+  '</div>';
+
+  html += '<div style="font-size:12.5px;color:var(--muted);line-height:1.7;padding:4px 2px;">' +
+    '<b>📖 人工协作审阅指南：</b><br>' +
+    '1. <b>出处判定逻辑</b>：采用「整句 > 跨句 > 片段」以及「朝代先于后世、诗词先于后转引、非僧人偈颂优先」的加权打分规则。<br>' +
+    '2. <b>繁简与异文</b>：语料对「乾」「徵」做单字豁免，并对「干↔乾」「着↔著」「唯↔惟」等设立异文对智能重查。<br>' +
+    '3. <b>离线版文本下载</b>：如需整库全量排版文本，可在 GitHub 仓库运行 <code>python tools/export_for_review.py</code> 生成分朝代分卷 txt。' +
+  '</div>';
+
+  box.innerHTML = html;
 }
 
 function openImportModal() {

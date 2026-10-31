@@ -552,11 +552,129 @@ function isAuthor(name) {
   return authorSet.has(n);
 }
 
+/* ---------- 数据库查验与协作检视接口 ---------- */
+let corpusSummaryCache = null;
+
+function getCorpusSummary() {
+  if (corpusSummaryCache) return corpusSummaryCache;
+  load();
+  const kinds = {};
+  const dynasties = {};
+  let variantCount = 0;
+  for (let i = 0; i < poems.length; i++) {
+    const p = poems[i];
+    const k = p[3] || '其他';
+    kinds[k] = (kinds[k] || 0) + 1;
+    const d = p[2] || '未知';
+    dynasties[d] = (dynasties[d] || 0) + 1;
+    if (p[0] && p[0].includes('(异文版)')) variantCount++;
+  }
+  corpusSummaryCache = {
+    lines: stats.lines,
+    poems: stats.poems,
+    chars: stats.chars,
+    kinds,
+    dynasties,
+    variants: variantCount,
+  };
+  return corpusSummaryCache;
+}
+
+function getPoemFull(pi) {
+  const p = poems[pi];
+  if (!p) return null;
+  const from = poemEnd[pi], to = poemEnd[pi + 1];
+  const cs = to > from ? getClauses(pi, from, to - 1) : [];
+  const clausesWithPunct = [];
+  const parts = [];
+  for (let i = 0; i < cs.length; i++) {
+    const pch = punctOf(from + i);
+    clausesWithPunct.push(cs[i] + pch);
+    parts.push(cs[i] + pch);
+  }
+  return {
+    id: pi,
+    title: p[0],
+    author: p[1],
+    dynasty: p[2],
+    kind: p[3],
+    count: p[4],
+    prio: p[5],
+    clauses: clausesWithPunct,
+    text: parts.join(''),
+  };
+}
+
+function searchPoems(query, limit = 30) {
+  load();
+  const q = String(query || '').trim();
+  if (!q) return { total: 0, list: [] };
+  const lim = Math.max(1, Math.min(50, Number(limit) || 30));
+  const list = [];
+  let total = 0;
+  for (let i = 0; i < poems.length; i++) {
+    const p = poems[i];
+    if (p[0].includes(q) || p[1].includes(q)) {
+      total++;
+      if (list.length < lim) {
+        list.push(getPoemFull(i));
+      }
+    }
+  }
+  return { total, list };
+}
+
+function probeCorpus(text, limit = 15) {
+  load();
+  const raw = String(text || '').trim();
+  if (!raw) return { judge: null, hits: [] };
+  const judgeRes = judge(raw);
+  const q = normalize(raw);
+  const hits = [];
+  if (q && q.length >= 2) {
+    const seenPi = new Set();
+    let from = 0;
+    const maxGuard = 200;
+    let guard = 0;
+    while (guard++ < maxGuard) {
+      const pos = pb.indexOf(q, from);
+      if (pos < 0) break;
+      const pi = poemAt(pos);
+      if (!seenPi.has(pi)) {
+        seenPi.add(pi);
+        const p = poems[pi];
+        const sp = spanInfo(pi, pos, pos + q.length);
+        const whole = pos === sp.fs && pos + q.length === sp.te;
+        const info = getPoemFull(pi);
+        hits.push({
+          pi,
+          title: info.title,
+          author: info.author,
+          dynasty: info.dynasty,
+          kind: info.kind,
+          prio: info.prio,
+          whole,
+          hitClause: getClauses(pi, sp.f, sp.t).join(' '),
+          clauses: info.clauses,
+          text: info.text,
+        });
+        if (hits.length >= limit) break;
+      }
+      from = pos + Math.max(1, q.length);
+    }
+  }
+  return { judge: judgeRes, hits };
+}
+
 module.exports = {
   load, judge, normalize, punctOf,
   stats: () => stats,
   randomAuthor, isAuthor,
   authorCount: () => { if (!authorPool) { load(); authorPool = buildAuthorPool(); } return authorPool.length; },
+  getCorpusSummary,
+  getPoemFull,
+  searchPoems,
+  probeCorpus,
 };
 
 /* 命令行：node judge.js "床前明月光" */

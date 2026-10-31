@@ -3203,6 +3203,23 @@ function claimOfflineSeat(room, nick, clientToken) {
     return sendJSON(res, 200, { ok: true, rooms: list.slice(0, 60), total: list.length });
   }
 
+  /* ---------- 语料查验与协作检视 API（公开只读） ---------- */
+  if (u.pathname === '/api/corpus/summary') {
+    return sendJSON(res, 200, { ok: true, data: judgeMod.getCorpusSummary() });
+  }
+
+  if (u.pathname === '/api/corpus/search') {
+    const q = u.searchParams.get('q') || '';
+    const limit = u.searchParams.get('limit') || 30;
+    return sendJSON(res, 200, { ok: true, data: judgeMod.searchPoems(q, limit) });
+  }
+
+  if (u.pathname === '/api/corpus/probe') {
+    const q = u.searchParams.get('q') || '';
+    const limit = u.searchParams.get('limit') || 15;
+    return sendJSON(res, 200, { ok: true, data: judgeMod.probeCorpus(q, limit) });
+  }
+
   if (u.pathname === '/api/stats') {
     /* pid 是给自测用的：Windows 上 SO_REUSEADDR 允许两个进程同时绑同一个端口，
        「端口上有人回答」不等于「回答的是我刚起的那个进程」。测试靠它自证。
